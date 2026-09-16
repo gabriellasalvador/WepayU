@@ -1,25 +1,33 @@
 package br.ufal.ic.p2.wepayu.models;
 
-import br.ufal.ic.p2.wepayu.Exception.EmpregadoNaoExisteException;
-
 public class Empregado {
+    private String id;
     private String nome;
     private String endereco;
     private String tipo;
-    private int salario;
+    private double salario;
+    private double comissao;
+    private boolean sindicalizado;
 
-    public Empregado(String nome, String endereco, String tipo, int salario) throws EmpregadoNaoExisteException {
+    public Empregado(String id, String nome, String endereco, String tipo, double salario){
+        this.id = id;
         this.nome = nome;
         this.endereco = endereco;
         this.tipo = tipo;
         this.salario = salario;
+        this.sindicalizado = false;
     }
 
+    public String getId(){
+        return id;
+    }
     public String getNome() {
+
         return nome;
     }
 
     public String getEndereco() {
+
         return endereco;
     }
 
@@ -27,8 +35,19 @@ public class Empregado {
         return tipo;
     }
 
-    public int getSalario() {
+    public double getSalario() {
         return salario;
     }
 
+    public double getComissao() {
+        return comissao;
+    }
+
+    public void setComissao() {
+        this.comissao = comissao;
+    }
+
+    public boolean isSindicalizado(){
+        return sindicalizado;
+    }
 }
