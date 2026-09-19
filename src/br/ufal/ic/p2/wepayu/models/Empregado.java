@@ -43,7 +43,7 @@ public class Empregado {
         return comissao;
     }
 
-    public void setComissao() {
+    public void setComissao(double comissao) {
         this.comissao = comissao;
     }
 
