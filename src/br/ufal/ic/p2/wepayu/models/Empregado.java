@@ -39,4 +39,12 @@ public abstract class Empregado {
     public double getComissao() throws EmpregadoNaoEhComissionadoException {
         throw new EmpregadoNaoEhComissionadoException();
     }
+
+    public void addVenda(ResultadoVenda venda) throws EmpregadoNaoEhComissionadoException {
+        throw new EmpregadoNaoEhComissionadoException();
+    }
+
+    public List<ResultadoVenda> getVendas() throws EmpregadoNaoEhComissionadoException {
+        throw new EmpregadoNaoEhComissionadoException();
+    }
 }

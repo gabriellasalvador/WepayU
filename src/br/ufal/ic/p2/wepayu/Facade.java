@@ -6,6 +6,7 @@ import br.ufal.ic.p2.wepayu.models.Empregado;
 import br.ufal.ic.p2.wepayu.models.EmpregadoAssalariado;
 import br.ufal.ic.p2.wepayu.models.EmpregadoComissionado;
 import br.ufal.ic.p2.wepayu.models.EmpregadoHorista;
+import br.ufal.ic.p2.wepayu.models.ResultadoVenda;
 
 import java.time.LocalDate;
 import java.util.HashMap;
@@ -169,6 +170,45 @@ public class Facade {
             }
         }
         return formataHoras(total);
+    }
+
+    public void lancaVenda(String emp, String data, String valor) throws ValidacaoException {
+        if (emp == null || emp.isEmpty()) throw new IdentificacaoNulaException();
+        Empregado empregado = empregados.get(emp);
+        if (empregado == null) throw new EmpregadoNaoExisteException();
+
+        LocalDate dataConvertida;
+        try {
+            dataConvertida = parseData(data);
+        } catch (Exception e) {
+            throw new DataInvalidaException();
+        }
+        double valorConvertido = Double.parseDouble(valor.replace(",", "."));
+        if (valorConvertido <= 0) throw new ValorNaoPositivoException();
+
+        empregado.addVenda(new ResultadoVenda(dataConvertida, valorConvertido));
+    }
+
+    public String getVendasRealizadas(String emp, String dataInicial, String dataFinal) throws ValidacaoException {
+        if (emp == null || emp.isEmpty()) throw new IdentificacaoNulaException();
+        Empregado empregado = empregados.get(emp);
+        if (empregado == null) throw new EmpregadoNaoExisteException();
+        List<ResultadoVenda> vendas = empregado.getVendas();
+
+        LocalDate inicio;
+        try { inicio = parseData(dataInicial); } catch (Exception e) { throw new DataInicialInvalidaException(); }
+        LocalDate fim;
+        try { fim = parseData(dataFinal); } catch (Exception e) { throw new DataFinalInvalidaException(); }
+        if (inicio.isAfter(fim)) throw new DataInicialPosteriorException();
+
+        double total = 0;
+        for (ResultadoVenda venda : vendas) {
+            LocalDate data = venda.getData();
+            if (!data.isBefore(inicio) && data.isBefore(fim)) {
+                total += venda.getValor();
+            }
+        }
+        return formataValor(total);
     }
 
     private String formataValor(double valor) {
