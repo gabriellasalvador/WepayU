@@ -1,53 +1,42 @@
 package br.ufal.ic.p2.wepayu.models;
 
-public class Empregado {
+import br.ufal.ic.p2.wepayu.Exception.EmpregadoNaoEhComissionadoException;
+import br.ufal.ic.p2.wepayu.Exception.EmpregadoNaoEhHoristaException;
+
+import java.util.List;
+
+public abstract class Empregado {
     private String id;
     private String nome;
     private String endereco;
-    private String tipo;
     private double salario;
-    private double comissao;
     private boolean sindicalizado;
 
-    public Empregado(String id, String nome, String endereco, String tipo, double salario){
+    public Empregado(String id, String nome, String endereco, double salario) {
         this.id = id;
         this.nome = nome;
         this.endereco = endereco;
-        this.tipo = tipo;
         this.salario = salario;
         this.sindicalizado = false;
     }
 
-    public String getId(){
-        return id;
-    }
-    public String getNome() {
+    public String getId() { return id; }
+    public String getNome() { return nome; }
+    public String getEndereco() { return endereco; }
+    public double getSalario() { return salario; }
+    public boolean isSindicalizado() { return sindicalizado; }
 
-        return nome;
-    }
+    public abstract String getTipo();
 
-    public String getEndereco() {
-
-        return endereco;
-    }
-
-    public String getTipo() {
-        return tipo;
+    public void addCartao(CartaoDePonto cartao) throws EmpregadoNaoEhHoristaException {
+        throw new EmpregadoNaoEhHoristaException();
     }
 
-    public double getSalario() {
-        return salario;
+    public List<CartaoDePonto> getCartoes() throws EmpregadoNaoEhHoristaException {
+        throw new EmpregadoNaoEhHoristaException();
     }
 
-    public double getComissao() {
-        return comissao;
-    }
-
-    public void setComissao(double comissao) {
-        this.comissao = comissao;
-    }
-
-    public boolean isSindicalizado(){
-        return sindicalizado;
+    public double getComissao() throws EmpregadoNaoEhComissionadoException {
+        throw new EmpregadoNaoEhComissionadoException();
     }
 }
