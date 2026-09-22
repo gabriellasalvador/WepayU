@@ -9,10 +9,21 @@ import br.ufal.ic.p2.wepayu.models.EmpregadoHorista;
 import br.ufal.ic.p2.wepayu.models.ResultadoVenda;
 import br.ufal.ic.p2.wepayu.models.TaxaServico;
 
+
 import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.time.DayOfWeek;
+import java.time.YearMonth;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
+import java.io.PrintWriter;
+import java.io.FileOutputStream;
+import java.io.OutputStreamWriter;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Comparator;
 
 public class Facade {
 
@@ -431,6 +442,265 @@ public class Facade {
         if (contaCorrente == null || contaCorrente.isEmpty()) throw new ContaCorrenteNulaException();
 
         empregado.definirPagamentoBanco(banco, agencia, contaCorrente);
+    }
+
+// ===================== FOLHA DE PAGAMENTO (US7) =====================
+
+    private static final LocalDate PRIMEIRO_PAGAMENTO_COMISSIONADO = LocalDate.of(2005, 1, 14);
+    private Map<LocalDate, String> folhasGeradas = new HashMap<>();
+
+    private static class ResultadoFolha {
+        String relatorio;
+        double total;
+    }
+
+    private String repete(char c, int n) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < n; i++) sb.append(c);
+        return sb.toString();
+    }
+
+    private String bordaTopo() {
+        return repete('=', 127);
+    }
+
+    private String bordaCategoria(String titulo) {
+        String meio = repete('=', 21) + " " + titulo + " ";
+        return meio + repete('=', 127 - meio.length());
+    }
+
+    private double truncar(double valor) {
+        return Math.floor(valor * 100 + 1e-9) / 100.0;
+    }
+
+    private boolean isDiaPagamentoHorista(LocalDate data) {
+        return data.getDayOfWeek() == DayOfWeek.FRIDAY;
+    }
+
+    private LocalDate ultimoDiaUtilDoMes(YearMonth mes) {
+        LocalDate dia = mes.atEndOfMonth();
+        while (dia.getDayOfWeek() == DayOfWeek.SATURDAY || dia.getDayOfWeek() == DayOfWeek.SUNDAY) {
+            dia = dia.minusDays(1);
+        }
+        return dia;
+    }
+
+    private boolean isDiaPagamentoAssalariado(LocalDate data) {
+        return data.equals(ultimoDiaUtilDoMes(YearMonth.from(data)));
+    }
+
+    private boolean isDiaPagamentoComissionado(LocalDate data) {
+        if (data.isBefore(PRIMEIRO_PAGAMENTO_COMISSIONADO)) return false;
+        return ChronoUnit.DAYS.between(PRIMEIRO_PAGAMENTO_COMISSIONADO, data) % 14 == 0;
+    }
+
+    private String metodoDescricao(Empregado e) {
+        switch (e.getMetodoPagamento()) {
+            case "banco":
+                return e.getBanco() + ", Ag. " + e.getAgencia() + " CC " + e.getContaCorrente();
+            case "correios":
+                return "Correios, " + e.getEndereco();
+            default:
+                return "Em maos";
+        }
+    }
+
+    // "aplicarMutacao" = true grava o novo saldo de divida no empregado (usado pelo rodaFolha);
+// false so simula, sem persistir nada (usado pelo totalFolha, que e' so uma previa)
+    private double calcularDescontoSindicato(Empregado e, LocalDate inicioExclusive, LocalDate fimInclusive,
+                                             int diasNoPeriodo, double bruto, boolean aplicarMutacao) {
+        if (!e.isSindicalizado()) return 0;
+
+        double cobrancaPeriodo = e.getTaxaSindical() * diasNoPeriodo;
+        for (TaxaServico t : e.getTaxasServico()) {
+            LocalDate d = t.getData();
+            if (d.isAfter(inicioExclusive) && !d.isAfter(fimInclusive)) {
+                cobrancaPeriodo += t.getValor();
+            }
+        }
+
+        double dividaTotal = e.getDividaSindical() + cobrancaPeriodo;
+        double descontosAplicados = truncar(Math.min(dividaTotal, bruto));
+
+        if (aplicarMutacao) {
+            e.setDividaSindical(truncar(dividaTotal - descontosAplicados));
+        }
+
+        return descontosAplicados;
+    }
+
+    private ResultadoFolha calcularFolha(LocalDate data, boolean aplicarMutacao) {
+        ResultadoFolha resultado = new ResultadoFolha();
+        StringBuilder sb = new StringBuilder();
+
+        String titulo = "FOLHA DE PAGAMENTO DO DIA " + data.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+        sb.append(titulo).append("\r\n");
+        sb.append(repete('=', titulo.length())).append("\r\n");
+        sb.append("\r\n");
+
+        double totalGeral = 0;
+
+        // ---------- HORISTAS ----------
+        List<Empregado> horistas = new ArrayList<>();
+        for (Empregado e : empregados.values()) if ("horista".equals(e.getTipo())) horistas.add(e);
+        horistas.sort(Comparator.comparing(Empregado::getNome));
+
+        sb.append(bordaTopo()).append("\r\n");
+        sb.append(bordaCategoria("HORISTAS")).append("\r\n");
+        sb.append(bordaTopo()).append("\r\n");
+        sb.append(String.format("%-36s %-5s %-5s %-13s %-9s %-15s %s",
+                "Nome", "Horas", "Extra", "Salario Bruto", "Descontos", "Salario Liquido", "Metodo")).append("\r\n");
+        sb.append(String.format("%-36s %5s %5s %13s %9s %15s %s",
+                repete('=', 36), repete('=', 5), repete('=', 5), repete('=', 13), repete('=', 9), repete('=', 15), repete('=', 38))).append("\r\n");
+
+        double totHoras = 0, totExtra = 0, totBrutoH = 0, totDescH = 0, totLiqH = 0;
+        boolean diaHorista = isDiaPagamentoHorista(data);
+        if (diaHorista) {
+            LocalDate inicio = data.minusDays(7);
+            for (Empregado e : horistas) {
+                List<CartaoDePonto> cartoes;
+                try { cartoes = e.getCartoes(); } catch (EmpregadoNaoEhHoristaException ex) { cartoes = new ArrayList<>(); }
+
+                double normais = 0, extras = 0;
+                for (CartaoDePonto c : cartoes) {
+                    LocalDate d = c.getData();
+                    if (d.isAfter(inicio) && !d.isAfter(data)) {
+                        normais += Math.min(c.getHoras(), 8);
+                        extras += Math.max(0, c.getHoras() - 8);
+                    }
+                }
+                double bruto = truncar(normais * e.getSalario() + extras * e.getSalario() * 1.5);
+                double descontos = calcularDescontoSindicato(e, inicio, data, 7, bruto, aplicarMutacao);
+                double liquido = bruto - descontos;
+
+                sb.append(String.format("%-36s %5s %5s %13s %9s %15s %s",
+                        e.getNome(), formataHoras(normais), formataHoras(extras),
+                        formataValor(bruto), formataValor(descontos), formataValor(liquido),
+                        metodoDescricao(e))).append("\r\n");
+
+                totHoras += normais; totExtra += extras; totBrutoH += bruto; totDescH += descontos; totLiqH += liquido;
+            }
+        }
+        sb.append("\r\n");
+        sb.append(String.format("%-36s %5s %5s %13s %9s %15s",
+                "TOTAL HORISTAS", formataHoras(totHoras), formataHoras(totExtra),
+                formataValor(totBrutoH), formataValor(totDescH), formataValor(totLiqH))).append("\r\n");
+        sb.append("\r\n");
+        totalGeral += totBrutoH;
+
+        // ---------- ASSALARIADOS ----------
+        List<Empregado> assalariados = new ArrayList<>();
+        for (Empregado e : empregados.values()) if ("assalariado".equals(e.getTipo())) assalariados.add(e);
+        assalariados.sort(Comparator.comparing(Empregado::getNome));
+
+        sb.append(bordaTopo()).append("\r\n");
+        sb.append(bordaCategoria("ASSALARIADOS")).append("\r\n");
+        sb.append(bordaTopo()).append("\r\n");
+        sb.append(String.format("%-48s %-13s %-9s %-15s %s",
+                "Nome", "Salario Bruto", "Descontos", "Salario Liquido", "Metodo")).append("\r\n");
+        sb.append(String.format("%-48s %13s %9s %15s %s",
+                repete('=', 48), repete('=', 13), repete('=', 9), repete('=', 15), repete('=', 38))).append("\r\n");
+
+        double totBrutoA = 0, totDescA = 0, totLiqA = 0;
+        boolean diaAssalariado = isDiaPagamentoAssalariado(data);
+        if (diaAssalariado) {
+            YearMonth mes = YearMonth.from(data);
+            LocalDate inicioMes = mes.atDay(1).minusDays(1);
+            int diasNoMes = mes.lengthOfMonth();
+            for (Empregado e : assalariados) {
+                double bruto = truncar(e.getSalario());
+                double descontos = calcularDescontoSindicato(e, inicioMes, data, diasNoMes, bruto, aplicarMutacao);
+                double liquido = bruto - descontos;
+
+                sb.append(String.format("%-48s %13s %9s %15s %s",
+                        e.getNome(), formataValor(bruto), formataValor(descontos), formataValor(liquido),
+                        metodoDescricao(e))).append("\r\n");
+
+                totBrutoA += bruto; totDescA += descontos; totLiqA += liquido;
+            }
+        }
+        sb.append("\r\n");
+        sb.append(String.format("%-48s %13s %9s %15s",
+                "TOTAL ASSALARIADOS", formataValor(totBrutoA), formataValor(totDescA), formataValor(totLiqA))).append("\r\n");
+        sb.append("\r\n");
+        totalGeral += totBrutoA;
+
+        // ---------- COMISSIONADOS ----------
+        List<Empregado> comissionados = new ArrayList<>();
+        for (Empregado e : empregados.values()) if ("comissionado".equals(e.getTipo())) comissionados.add(e);
+        comissionados.sort(Comparator.comparing(Empregado::getNome));
+
+        sb.append(bordaTopo()).append("\r\n");
+        sb.append(bordaCategoria("COMISSIONADOS")).append("\r\n");
+        sb.append(bordaTopo()).append("\r\n");
+        sb.append(String.format("%-21s %-8s %-8s %-8s %-13s %-9s %-15s %s",
+                "Nome", "Fixo", "Vendas", "Comissao", "Salario Bruto", "Descontos", "Salario Liquido", "Metodo")).append("\r\n");
+        sb.append(String.format("%-21s %8s %8s %8s %13s %9s %15s %s",
+                repete('=', 21), repete('=', 8), repete('=', 8), repete('=', 8), repete('=', 13), repete('=', 9), repete('=', 15), repete('=', 38))).append("\r\n");
+
+        double totFixo = 0, totVendas = 0, totComissao = 0, totBrutoC = 0, totDescC = 0, totLiqC = 0;
+        boolean diaComissionado = isDiaPagamentoComissionado(data);
+        if (diaComissionado) {
+            LocalDate inicio = data.minusDays(14);
+            for (Empregado e : comissionados) {
+                List<ResultadoVenda> vendas;
+                try { vendas = e.getVendas(); } catch (EmpregadoNaoEhComissionadoException ex) { vendas = new ArrayList<>(); }
+
+                double vendasPeriodo = 0;
+                for (ResultadoVenda v : vendas) {
+                    LocalDate d = v.getData();
+                    if (d.isAfter(inicio) && !d.isAfter(data)) vendasPeriodo += v.getValor();
+                }
+
+                double fixo = truncar(e.getSalario() * 24 / 52);
+                double comissaoValor;
+                try { comissaoValor = truncar(vendasPeriodo * e.getComissao()); }
+                catch (EmpregadoNaoEhComissionadoException ex) { comissaoValor = 0; }
+
+                double bruto = truncar(fixo + comissaoValor);
+                double descontos = calcularDescontoSindicato(e, inicio, data, 14, bruto, aplicarMutacao);
+                double liquido = bruto - descontos;
+
+                sb.append(String.format("%-21s %8s %8s %8s %13s %9s %15s %s",
+                        e.getNome(), formataValor(fixo), formataValor(vendasPeriodo), formataValor(comissaoValor),
+                        formataValor(bruto), formataValor(descontos), formataValor(liquido),
+                        metodoDescricao(e))).append("\r\n");
+
+                totFixo += fixo; totVendas += vendasPeriodo; totComissao += comissaoValor;
+                totBrutoC += bruto; totDescC += descontos; totLiqC += liquido;
+            }
+        }
+        sb.append("\r\n");
+        sb.append(String.format("%-21s %8s %8s %8s %13s %9s %15s",
+                "TOTAL COMISSIONADOS", formataValor(totFixo), formataValor(totVendas), formataValor(totComissao),
+                formataValor(totBrutoC), formataValor(totDescC), formataValor(totLiqC))).append("\r\n");
+        sb.append("\r\n");
+        totalGeral += totBrutoC;
+
+        sb.append("TOTAL FOLHA: ").append(formataValor(truncar(totalGeral))).append("\r\n");
+
+        resultado.relatorio = sb.toString();
+        resultado.total = truncar(totalGeral);
+        return resultado;
+    }
+
+    public String totalFolha(String data) throws ValidacaoException {
+        LocalDate dataConvertida;
+        try { dataConvertida = parseData(data); } catch (Exception e) { throw new DataInvalidaException(); }
+        return formataValor(calcularFolha(dataConvertida, false).total);
+    }
+
+    public void rodaFolha(String data, String saida) throws ValidacaoException {
+        LocalDate dataConvertida;
+        try { dataConvertida = parseData(data); } catch (Exception e) { throw new DataInvalidaException(); }
+
+        String relatorio = folhasGeradas.computeIfAbsent(dataConvertida, d -> calcularFolha(d, true).relatorio);
+
+        try (PrintWriter out = new PrintWriter(new OutputStreamWriter(new FileOutputStream(saida), "UTF-8"))) {
+            out.print(relatorio);
+        } catch (IOException e) {
+            throw new RuntimeException("Erro ao escrever arquivo da folha: " + e.getMessage());
+        }
     }
 
 

@@ -54,10 +54,18 @@ public abstract class Empregado {
 
     private String idSindicato;
     private double taxaSindical;
+    private double dividaSindical = 0;
     private List<TaxaServico> taxasServico = new ArrayList<>();
 
     public String getIdSindicato() { return idSindicato; }
     public double getTaxaSindical() { return taxaSindical; }
+
+
+    public double getDividaSindical() { return dividaSindical; }
+    public void setDividaSindical(double dividaSindical) {
+        this.dividaSindical = dividaSindical;
+    }
+
 
     public void sindicalizar(String idSindicato, double taxaSindical) {
         this.sindicalizado = true;
@@ -119,6 +127,8 @@ public abstract class Empregado {
         this.banco = outro.banco;
         this.agencia = outro.agencia;
         this.contaCorrente = outro.contaCorrente;
+        this.dividaSindical = outro.dividaSindical;
+
     }
 
 
