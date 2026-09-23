@@ -4,8 +4,9 @@ import br.ufal.ic.p2.wepayu.Exception.EmpregadoNaoEhComissionadoException;
 import br.ufal.ic.p2.wepayu.Exception.EmpregadoNaoEhHoristaException;
 import java.util.ArrayList;
 import java.util.List;
+import java.io.Serializable;
 
-public abstract class Empregado {
+public abstract class Empregado implements Serializable{
     private String id;
     private String nome;
     private String endereco;

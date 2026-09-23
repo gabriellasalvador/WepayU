@@ -1,8 +1,9 @@
 package br.ufal.ic.p2.wepayu.models;
 
 import java.time.LocalDate;
+import java.io.Serializable;
 
-public class ResultadoVenda {
+public class ResultadoVenda implements Serializable{
     private LocalDate data;
     private double valor;
 

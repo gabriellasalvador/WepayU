@@ -24,19 +24,36 @@ import java.io.OutputStreamWriter;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.io.ByteArrayOutputStream;
+import java.io.ByteArrayInputStream;
+import java.io.ObjectOutputStream;
+import java.io.ObjectInputStream;
+import java.util.Deque;
+import java.util.ArrayDeque;
 
 public class Facade {
 
     private Map<String, Empregado> empregados = new HashMap<>();
+    private int proximoId = 1;
+    private Deque<byte[]> pilhaUndo = new ArrayDeque<>();
+    private Deque<byte[]> pilhaRedo = new ArrayDeque<>();
+    private boolean sistemaEncerrado = false;
+
 
     public void zerarSistema() {
+        byte[] fotoAntes = tirarFoto();
         empregados.clear();
+        folhasGeradas.clear();
+        proximoId = 1;
+        registrarComando(fotoAntes);
     }
 
     public void encerrarSistema() {
+        sistemaEncerrado = true;
     }
 
     public String criarEmpregado(String nome, String endereco, String tipo, String salario) throws ValidacaoException {
+        byte[] fotoAntes = tirarFoto();
         if (nome == null || nome.isEmpty()) throw new NomeNuloException();
         if (endereco == null || endereco.isEmpty()) throw new EnderecoNuloException();
         if (!tipo.equals("horista") && !tipo.equals("assalariado") && !tipo.equals("comissionado")) {
@@ -53,15 +70,17 @@ public class Facade {
         }
         if (salarioConvertido < 0) throw new SalarioNegativoException();
 
-        String id = String.valueOf(empregados.size() + 1);
+        String id = String.valueOf(proximoId++);
         Empregado empregado = tipo.equals("horista")
                 ? new EmpregadoHorista(id, nome, endereco, salarioConvertido)
                 : new EmpregadoAssalariado(id, nome, endereco, salarioConvertido);
         empregados.put(id, empregado);
+        registrarComando(fotoAntes);
         return id;
     }
 
     public String criarEmpregado(String nome, String endereco, String tipo, String salario, String comissao) throws ValidacaoException {
+        byte[] fotoAntes = tirarFoto();
         if (nome == null || nome.isEmpty()) throw new NomeNuloException();
         if (endereco == null || endereco.isEmpty()) throw new EnderecoNuloException();
         if (!tipo.equals("horista") && !tipo.equals("assalariado") && !tipo.equals("comissionado")) {
@@ -87,15 +106,18 @@ public class Facade {
         }
         if (comissaoConvertida < 0) throw new ComissaoNegativaException();
 
-        String id = String.valueOf(empregados.size() + 1);
+        String id = String.valueOf(proximoId++);
         Empregado empregado = new EmpregadoComissionado(id, nome, endereco, salarioConvertido, comissaoConvertida);
         empregados.put(id, empregado);
+        registrarComando(fotoAntes);
         return id;
     }
 
     public void removerEmpregado(String emp) throws ValidacaoException {
+        byte[] fotoAntes = tirarFoto();
         if (emp == null || emp.isEmpty()) throw new IdentificacaoNulaException();
         if (!empregados.containsKey(emp)) throw new EmpregadoNaoExisteException();
+        registrarComando(fotoAntes);
         empregados.remove(emp);
     }
 
@@ -134,6 +156,9 @@ public class Facade {
         }
     }
 
+    public int getNumeroDeEmpregados() {
+        return empregados.size();
+    }
     private LocalDate parseData(String data) throws Exception {
         String[] partes = data.split("/");
         int dia = Integer.parseInt(partes[0]);
@@ -143,6 +168,7 @@ public class Facade {
     }
 
     public void lancaCartao(String emp, String data, String horas) throws ValidacaoException {
+        byte[] fotoAntes = tirarFoto();
         if (emp == null || emp.isEmpty()) throw new IdentificacaoNulaException();
         Empregado empregado = empregados.get(emp);
         if (empregado == null) throw new EmpregadoNaoExisteException();
@@ -157,6 +183,25 @@ public class Facade {
         if (horasConvertidas <= 0) throw new HorasNaoPositivasException();
 
         empregado.addCartao(new CartaoDePonto(dataConvertida, horasConvertidas));
+        registrarComando(fotoAntes);
+    }
+
+    public String getEmpregadoPorNome(String nome, String indice) throws ValidacaoException {
+        int indiceConvertido = Integer.parseInt(indice);
+
+        List<Empregado> encontrados = new ArrayList<>();
+        for (Empregado e : empregados.values()) {
+            if (e.getNome().contains(nome)) {
+                encontrados.add(e);
+            }
+        }
+        encontrados.sort(Comparator.comparing(e -> Integer.parseInt(e.getId())));
+
+        if (indiceConvertido < 1 || indiceConvertido > encontrados.size()) {
+            throw new NaoHaEmpregadoComEsseNomeException();
+        }
+
+        return encontrados.get(indiceConvertido - 1).getId();
     }
 
     public String getHorasNormaisTrabalhadas(String emp, String dataInicial, String dataFinal) throws ValidacaoException {
@@ -204,6 +249,7 @@ public class Facade {
     }
 
     public void lancaVenda(String emp, String data, String valor) throws ValidacaoException {
+        byte[] fotoAntes = tirarFoto();
         if (emp == null || emp.isEmpty()) throw new IdentificacaoNulaException();
         Empregado empregado = empregados.get(emp);
         if (empregado == null) throw new EmpregadoNaoExisteException();
@@ -218,6 +264,7 @@ public class Facade {
         if (valorConvertido <= 0) throw new ValorNaoPositivoException();
 
         empregado.addVenda(new ResultadoVenda(dataConvertida, valorConvertido));
+        registrarComando(fotoAntes);
     }
 
     public String getVendasRealizadas(String emp, String dataInicial, String dataFinal) throws ValidacaoException {
@@ -266,7 +313,36 @@ public class Facade {
         throw new MembroNaoExisteException();
     }
 
+    private byte[] tirarFoto() {
+        try {
+            ByteArrayOutputStream bufferDeBytes = new ByteArrayOutputStream();
+            ObjectOutputStream escritorDeObjetos = new ObjectOutputStream(bufferDeBytes);
+            escritorDeObjetos.writeObject(empregados);
+            escritorDeObjetos.writeObject(folhasGeradas);
+            escritorDeObjetos.writeInt(proximoId);
+            escritorDeObjetos.close();
+            return bufferDeBytes.toByteArray();
+        } catch (IOException e) {
+            throw new RuntimeException("Erro ao tirar foto do sistema: " + e.getMessage());
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void restaurarFoto(byte[] foto) {
+        try {
+            ByteArrayInputStream bufferDeBytes = new ByteArrayInputStream(foto);
+            ObjectInputStream leitorDeObjetos = new ObjectInputStream(bufferDeBytes);
+            empregados = (Map<String, Empregado>) leitorDeObjetos.readObject();
+            folhasGeradas = (Map<LocalDate, String>) leitorDeObjetos.readObject();
+            proximoId = leitorDeObjetos.readInt();
+            leitorDeObjetos.close();
+        } catch (Exception e) {
+            throw new RuntimeException("Erro ao restaurar foto do sistema: " + e.getMessage());
+        }
+    }
+
     public void lancaTaxaServico(String membro, String data, String valor) throws ValidacaoException {
+        byte[] fotoAntes = tirarFoto();
         if (membro == null || membro.isEmpty()) throw new IdentificacaoMembroNulaException();
         Empregado empregado = buscarPorIdSindicato(membro);
 
@@ -280,6 +356,7 @@ public class Facade {
         if (valorConvertido <= 0) throw new ValorNaoPositivoException();
 
         empregado.addTaxaServico(new TaxaServico(dataConvertida, valorConvertido));
+        registrarComando(fotoAntes);
     }
 
     public String getTaxasServico(String emp, String dataInicial, String dataFinal) throws ValidacaoException {
@@ -341,6 +418,7 @@ public class Facade {
     }
 
     public void alteraEmpregado(String emp, String atributo, String valor) throws ValidacaoException {
+        byte[] fotoAntes = tirarFoto();
         Empregado empregado = buscarEmpregado(emp);
 
         switch (atributo) {
@@ -396,9 +474,12 @@ public class Facade {
             default:
                 throw new AtributoNaoExisteException();
         }
+
+        registrarComando(fotoAntes);
     }
 
     public void alteraEmpregado(String emp, String atributo, String valor, String valorExtra) throws ValidacaoException {
+        byte[] fotoAntes = tirarFoto();
         Empregado empregado = buscarEmpregado(emp);
         if (!atributo.equals("tipo")) throw new AtributoNaoExisteException();
 
@@ -409,9 +490,11 @@ public class Facade {
         } else {
             throw new TipoInvalidoException();
         }
+        registrarComando(fotoAntes);
     }
 
     public void alteraEmpregado(String emp, String atributo, String valor, String idSindicato, String taxaSindical) throws ValidacaoException {
+        byte[] fotoAntes = tirarFoto();
         Empregado empregado = buscarEmpregado(emp);
 
         if (idSindicato == null || idSindicato.isEmpty()) throw new IdentificacaoSindicatoNulaException();
@@ -432,9 +515,11 @@ public class Facade {
         if (taxaConvertida < 0) throw new TaxaSindicalNegativaException();
 
         empregado.sindicalizar(idSindicato, taxaConvertida);
+        registrarComando(fotoAntes);
     }
 
     public void alteraEmpregado(String emp, String atributo, String valor1, String banco, String agencia, String contaCorrente) throws ValidacaoException {
+        byte[] fotoAntes = tirarFoto();
         Empregado empregado = buscarEmpregado(emp);
 
         if (banco == null || banco.isEmpty()) throw new BancoNuloException();
@@ -442,6 +527,7 @@ public class Facade {
         if (contaCorrente == null || contaCorrente.isEmpty()) throw new ContaCorrenteNulaException();
 
         empregado.definirPagamentoBanco(banco, agencia, contaCorrente);
+        registrarComando(fotoAntes);
     }
 
 // ===================== FOLHA DE PAGAMENTO (US7) =====================
@@ -691,6 +777,7 @@ public class Facade {
     }
 
     public void rodaFolha(String data, String saida) throws ValidacaoException {
+        byte[] fotoAntes = tirarFoto();
         LocalDate dataConvertida;
         try { dataConvertida = parseData(data); } catch (Exception e) { throw new DataInvalidaException(); }
 
@@ -701,7 +788,34 @@ public class Facade {
         } catch (IOException e) {
             throw new RuntimeException("Erro ao escrever arquivo da folha: " + e.getMessage());
         }
+        registrarComando(fotoAntes);
     }
+
+    private void registrarComando(byte[] fotoAntes) {
+        pilhaUndo.push(fotoAntes);
+        pilhaRedo.clear();
+    }
+
+    public void undo() throws ValidacaoException {
+        if (sistemaEncerrado) throw new SistemaEncerradoException();
+        if (pilhaUndo.isEmpty()) throw new NaoHaComandoDesfazerException();
+
+        byte[] estadoAtual = tirarFoto();
+        byte[] estadoAnterior = pilhaUndo.pop();
+        pilhaRedo.push(estadoAtual);
+        restaurarFoto(estadoAnterior);
+    }
+
+    public void redo() throws ValidacaoException {
+        if (sistemaEncerrado) throw new SistemaEncerradoException();
+        if (pilhaRedo.isEmpty()) throw new NaoHaComandoRefazerException();
+
+        byte[] estadoAtual = tirarFoto();
+        byte[] estadoSeguinte = pilhaRedo.pop();
+        pilhaUndo.push(estadoAtual);
+        restaurarFoto(estadoSeguinte);
+    }
+
 
 
 
