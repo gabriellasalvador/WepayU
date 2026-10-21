@@ -43,6 +43,7 @@ import java.util.Deque;
 import java.util.ArrayDeque;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.function.Supplier;
 
 /**
  * Fachada do sistema WePayU.
@@ -82,7 +83,7 @@ public class Facade {
                 byte[] dadosSalvos = Files.readAllBytes(Paths.get(ARQUIVO_ESTADO));
                 restaurarFoto(dadosSalvos);
             } catch (IOException e) {
-                throw new RuntimeException("Erro ao carregar estado salvo: " + e.getMessage());
+                throw new RuntimeException("Erro ao carregar estado salvo: " + e.getMessage(), e);
             }
         }
     }
@@ -92,7 +93,8 @@ public class Facade {
      * Reseta completamente o sistema (empregados, folhas geradas e contador de id),
      * registrando o estado anterior na pilha de undo.
      */
-    public void zerarSistema() {
+    public void zerarSistema() throws ValidacaoException {
+        verificarSistemaAtivo();
         byte[] fotoAntes = tirarFoto();
         empregados.clear();
         folhasGeradas.clear();
@@ -109,7 +111,31 @@ public class Facade {
         try {
             Files.write(Paths.get(ARQUIVO_ESTADO), tirarFoto());
         } catch (IOException e) {
-            throw new RuntimeException("Erro ao salvar estado: " + e.getMessage());
+            throw new RuntimeException("Erro ao salvar estado: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Garante que o sistema ainda aceita comandos. Depois de encerrarSistema()
+     * nenhum comando (nem consulta, nem undo/redo) pode ser executado. Todo metodo
+     * publico de comando chama este guard na primeira linha, antes de tocar no estado.
+     */
+    private void verificarSistemaAtivo() throws SistemaEncerradoException {
+        if (sistemaEncerrado) throw new SistemaEncerradoException();
+    }
+
+    /**
+     * Converte um texto numerico (aceitando virgula ou ponto decimal) para double.
+     * Se o texto for nulo ou invalido, lanca a excecao de negocio fornecida pelo
+     * chamador, em vez de deixar escapar um NumberFormatException sem tratamento.
+     * Centraliza o que antes era repetido em cada comando que recebe numeros.
+     */
+    private double converterParaDouble(String texto, Supplier<? extends ValidacaoException> erro) throws ValidacaoException {
+        if (texto == null) throw erro.get();
+        try {
+            return Double.parseDouble(texto.replace(",", "."));
+        } catch (NumberFormatException e) {
+            throw erro.get();
         }
     }
 
@@ -118,6 +144,7 @@ public class Facade {
      * Valida nome, endereco, tipo e salario antes de persistir o novo empregado.
      */
     public String criarEmpregado(String nome, String endereco, String tipo, String salario) throws ValidacaoException {
+        verificarSistemaAtivo();
         byte[] fotoAntes = tirarFoto();
         if (nome == null || nome.isEmpty()) throw new NomeNuloException();
         if (endereco == null || endereco.isEmpty()) throw new EnderecoNuloException();
@@ -127,12 +154,7 @@ public class Facade {
         if (tipo.equals("comissionado")) throw new TipoNaoAplicavelException();
         if (salario == null || salario.isEmpty()) throw new SalarioNuloException();
 
-        double salarioConvertido;
-        try {
-            salarioConvertido = Double.parseDouble(salario.replace(",", "."));
-        } catch (NumberFormatException e) {
-            throw new SalarioNaoNumericoException();
-        }
+        double salarioConvertido = converterParaDouble(salario, SalarioNaoNumericoException::new);
         if (salarioConvertido < 0) throw new SalarioNegativoException();
 
         String id = String.valueOf(proximoId++);
@@ -149,6 +171,7 @@ public class Facade {
      * tambem o valor da comissao alem do salario fixo.
      */
     public String criarEmpregado(String nome, String endereco, String tipo, String salario, String comissao) throws ValidacaoException {
+        verificarSistemaAtivo();
         byte[] fotoAntes = tirarFoto();
         if (nome == null || nome.isEmpty()) throw new NomeNuloException();
         if (endereco == null || endereco.isEmpty()) throw new EnderecoNuloException();
@@ -158,21 +181,11 @@ public class Facade {
         if (!tipo.equals("comissionado")) throw new TipoNaoAplicavelException();
         if (salario == null || salario.isEmpty()) throw new SalarioNuloException();
 
-        double salarioConvertido;
-        try {
-            salarioConvertido = Double.parseDouble(salario.replace(",", "."));
-        } catch (NumberFormatException e) {
-            throw new SalarioNaoNumericoException();
-        }
+        double salarioConvertido = converterParaDouble(salario, SalarioNaoNumericoException::new);
         if (salarioConvertido < 0) throw new SalarioNegativoException();
         if (comissao == null || comissao.isEmpty()) throw new ComissaoNulaException();
 
-        double comissaoConvertida;
-        try {
-            comissaoConvertida = Double.parseDouble(comissao.replace(",", "."));
-        } catch (NumberFormatException e) {
-            throw new ComissaoNaoNumericaException();
-        }
+        double comissaoConvertida = converterParaDouble(comissao, ComissaoNaoNumericaException::new);
         if (comissaoConvertida < 0) throw new ComissaoNegativaException();
 
         String id = String.valueOf(proximoId++);
@@ -186,6 +199,7 @@ public class Facade {
      * Remove um empregado existente do sistema pelo id.
      */
     public void removerEmpregado(String emp) throws ValidacaoException {
+        verificarSistemaAtivo();
         byte[] fotoAntes = tirarFoto();
         if (emp == null || emp.isEmpty()) throw new IdentificacaoNulaException();
         if (!empregados.containsKey(emp)) throw new EmpregadoNaoExisteException();
@@ -199,6 +213,7 @@ public class Facade {
      * (ex.: "comissao" so faz sentido para comissionados, "banco" so para pagamento em banco).
      */
     public String getAtributoEmpregado(String emp, String atributo) throws ValidacaoException {
+        verificarSistemaAtivo();
         if (emp == null || emp.isEmpty()) throw new IdentificacaoNulaException();
         Empregado empregado = empregados.get(emp);
         if (empregado == null) throw new EmpregadoNaoExisteException();
@@ -236,7 +251,8 @@ public class Facade {
     /**
      * Retorna quantos empregados estao atualmente cadastrados no sistema.
      */
-    public int getNumeroDeEmpregados() {
+    public int getNumeroDeEmpregados() throws ValidacaoException {
+        verificarSistemaAtivo();
         return empregados.size();
     }
 
@@ -258,6 +274,7 @@ public class Facade {
      * Lanca um cartao de ponto (horas trabalhadas em uma data) para um empregado horista.
      */
     public void lancaCartao(String emp, String data, String horas) throws ValidacaoException {
+        verificarSistemaAtivo();
         byte[] fotoAntes = tirarFoto();
         if (emp == null || emp.isEmpty()) throw new IdentificacaoNulaException();
         Empregado empregado = empregados.get(emp);
@@ -269,7 +286,7 @@ public class Facade {
         } catch (Exception e) {
             throw new DataInvalidaException();
         }
-        double horasConvertidas = Double.parseDouble(horas.replace(",", "."));
+        double horasConvertidas = converterParaDouble(horas, HorasNaoNumericasException::new);
         if (horasConvertidas <= 0) throw new HorasNaoPositivasException();
 
         empregado.addCartao(new CartaoDePonto(dataConvertida, horasConvertidas));
@@ -281,7 +298,14 @@ public class Facade {
      * ordenando os resultados por id (numerico) antes de aplicar o indice.
      */
     public String getEmpregadoPorNome(String nome, String indice) throws ValidacaoException {
-        int indiceConvertido = Integer.parseInt(indice);
+        verificarSistemaAtivo();
+        int indiceConvertido;
+        try {
+            indiceConvertido = Integer.parseInt(indice);
+        } catch (NumberFormatException e) {
+            // Um indice que nem e numero nao aponta para nenhum empregado.
+            throw new NaoHaEmpregadoComEsseNomeException();
+        }
 
         List<Empregado> encontrados = new ArrayList<>();
         for (Empregado e : empregados.values()) {
@@ -303,6 +327,7 @@ public class Facade {
      * dentro do periodo [dataInicial, dataFinal), usada tipicamente para horistas.
      */
     public String getHorasNormaisTrabalhadas(String emp, String dataInicial, String dataFinal) throws ValidacaoException {
+        verificarSistemaAtivo();
         if (emp == null || emp.isEmpty()) throw new IdentificacaoNulaException();
         Empregado empregado = empregados.get(emp);
         if (empregado == null) throw new EmpregadoNaoExisteException();
@@ -329,6 +354,7 @@ public class Facade {
      * dentro do periodo [dataInicial, dataFinal).
      */
     public String getHorasExtrasTrabalhadas(String emp, String dataInicial, String dataFinal) throws ValidacaoException {
+        verificarSistemaAtivo();
         if (emp == null || emp.isEmpty()) throw new IdentificacaoNulaException();
         Empregado empregado = empregados.get(emp);
         if (empregado == null) throw new EmpregadoNaoExisteException();
@@ -354,6 +380,7 @@ public class Facade {
      * Lanca uma venda realizada por um empregado comissionado em uma data especifica.
      */
     public void lancaVenda(String emp, String data, String valor) throws ValidacaoException {
+        verificarSistemaAtivo();
         byte[] fotoAntes = tirarFoto();
         if (emp == null || emp.isEmpty()) throw new IdentificacaoNulaException();
         Empregado empregado = empregados.get(emp);
@@ -365,7 +392,7 @@ public class Facade {
         } catch (Exception e) {
             throw new DataInvalidaException();
         }
-        double valorConvertido = Double.parseDouble(valor.replace(",", "."));
+        double valorConvertido = converterParaDouble(valor, ValorNaoNumericoException::new);
         if (valorConvertido <= 0) throw new ValorNaoPositivoException();
 
         empregado.addVenda(new ResultadoVenda(dataConvertida, valorConvertido));
@@ -377,6 +404,7 @@ public class Facade {
      * dentro do periodo [dataInicial, dataFinal).
      */
     public String getVendasRealizadas(String emp, String dataInicial, String dataFinal) throws ValidacaoException {
+        verificarSistemaAtivo();
         if (emp == null || emp.isEmpty()) throw new IdentificacaoNulaException();
         Empregado empregado = empregados.get(emp);
         if (empregado == null) throw new EmpregadoNaoExisteException();
@@ -443,17 +471,16 @@ public class Facade {
      * que pode ser empilhado e restaurado depois.
      */
     private byte[] tirarFoto() {
-        try {
-            ByteArrayOutputStream bufferDeBytes = new ByteArrayOutputStream();
-            ObjectOutputStream escritorDeObjetos = new ObjectOutputStream(bufferDeBytes);
+        ByteArrayOutputStream bufferDeBytes = new ByteArrayOutputStream();
+        // try-with-resources: o stream e fechado (e descarregado) mesmo se algo falhar no meio.
+        try (ObjectOutputStream escritorDeObjetos = new ObjectOutputStream(bufferDeBytes)) {
             escritorDeObjetos.writeObject(empregados);
             escritorDeObjetos.writeObject(folhasGeradas);
             escritorDeObjetos.writeInt(proximoId);
-            escritorDeObjetos.close();
-            return bufferDeBytes.toByteArray();
         } catch (IOException e) {
-            throw new RuntimeException("Erro ao tirar foto do sistema: " + e.getMessage());
+            throw new RuntimeException("Erro ao tirar foto do sistema: " + e.getMessage(), e);
         }
+        return bufferDeBytes.toByteArray();
     }
 
     /**
@@ -463,15 +490,12 @@ public class Facade {
      */
     @SuppressWarnings("unchecked")
     private void restaurarFoto(byte[] foto) {
-        try {
-            ByteArrayInputStream bufferDeBytes = new ByteArrayInputStream(foto);
-            ObjectInputStream leitorDeObjetos = new ObjectInputStream(bufferDeBytes);
+        try (ObjectInputStream leitorDeObjetos = new ObjectInputStream(new ByteArrayInputStream(foto))) {
             empregados = (Map<String, Empregado>) leitorDeObjetos.readObject();
             folhasGeradas = (Map<LocalDate, String>) leitorDeObjetos.readObject();
             proximoId = leitorDeObjetos.readInt();
-            leitorDeObjetos.close();
-        } catch (Exception e) {
-            throw new RuntimeException("Erro ao restaurar foto do sistema: " + e.getMessage());
+        } catch (IOException | ClassNotFoundException e) {
+            throw new RuntimeException("Erro ao restaurar foto do sistema: " + e.getMessage(), e);
         }
     }
 
@@ -480,6 +504,7 @@ public class Facade {
      * pelo id de sindicato ("membro"), em uma data especifica.
      */
     public void lancaTaxaServico(String membro, String data, String valor) throws ValidacaoException {
+        verificarSistemaAtivo();
         byte[] fotoAntes = tirarFoto();
         if (membro == null || membro.isEmpty()) throw new IdentificacaoMembroNulaException();
         Empregado empregado = buscarPorIdSindicato(membro);
@@ -490,7 +515,7 @@ public class Facade {
         } catch (Exception e) {
             throw new DataInvalidaException();
         }
-        double valorConvertido = Double.parseDouble(valor.replace(",", "."));
+        double valorConvertido = converterParaDouble(valor, ValorNaoNumericoException::new);
         if (valorConvertido <= 0) throw new ValorNaoPositivoException();
 
         empregado.addTaxaServico(new TaxaServico(dataConvertida, valorConvertido));
@@ -502,6 +527,7 @@ public class Facade {
      * dentro do periodo [dataInicial, dataFinal).
      */
     public String getTaxasServico(String emp, String dataInicial, String dataFinal) throws ValidacaoException {
+        verificarSistemaAtivo();
         if (emp == null || emp.isEmpty()) throw new IdentificacaoNulaException();
         Empregado empregado = empregados.get(emp);
         if (empregado == null) throw new EmpregadoNaoExisteException();
@@ -543,11 +569,7 @@ public class Facade {
     private void trocarTipo(Empregado antigo, String novoTipo, String novoSalario, String novaComissao) throws ValidacaoException {
         double salarioFinal = antigo.getSalario();
         if (novoSalario != null) {
-            try {
-                salarioFinal = Double.parseDouble(novoSalario.replace(",", "."));
-            } catch (NumberFormatException e) {
-                throw new SalarioNaoNumericoException();
-            }
+            salarioFinal = converterParaDouble(novoSalario, SalarioNaoNumericoException::new);
         }
 
         Empregado novo;
@@ -558,7 +580,7 @@ public class Facade {
         } else if (novoTipo.equals("comissionado")) {
             double comissaoFinal = 0;
             if (novaComissao != null) {
-                comissaoFinal = Double.parseDouble(novaComissao.replace(",", "."));
+                comissaoFinal = converterParaDouble(novaComissao, ComissaoNaoNumericaException::new);
             }
             novo = new EmpregadoComissionado(antigo.getId(), antigo.getNome(), antigo.getEndereco(), salarioFinal, comissaoFinal);
         } else {
@@ -575,6 +597,7 @@ public class Facade {
      * o atributo escolhido.
      */
     public void alteraEmpregado(String emp, String atributo, String valor) throws ValidacaoException {
+        verificarSistemaAtivo();
         byte[] fotoAntes = tirarFoto();
         Empregado empregado = buscarEmpregado(emp);
 
@@ -589,23 +612,13 @@ public class Facade {
                 break;
             case "salario":
                 if (valor == null || valor.isEmpty()) throw new SalarioNuloException();
-                double salarioConvertido;
-                try {
-                    salarioConvertido = Double.parseDouble(valor.replace(",", "."));
-                } catch (NumberFormatException e) {
-                    throw new SalarioNaoNumericoException();
-                }
+                double salarioConvertido = converterParaDouble(valor, SalarioNaoNumericoException::new);
                 if (salarioConvertido < 0) throw new SalarioNegativoException();
                 empregado.setSalario(salarioConvertido);
                 break;
             case "comissao":
                 if (valor == null || valor.isEmpty()) throw new ComissaoNulaException();
-                double comissaoConvertida;
-                try {
-                    comissaoConvertida = Double.parseDouble(valor.replace(",", "."));
-                } catch (NumberFormatException e) {
-                    throw new ComissaoNaoNumericaException();
-                }
+                double comissaoConvertida = converterParaDouble(valor, ComissaoNaoNumericaException::new);
                 if (comissaoConvertida < 0) throw new ComissaoNegativaException();
                 empregado.setComissao(comissaoConvertida);
                 break;
@@ -641,6 +654,7 @@ public class Facade {
      * ou a nova comissao (para comissionado).
      */
     public void alteraEmpregado(String emp, String atributo, String valor, String valorExtra) throws ValidacaoException {
+        verificarSistemaAtivo();
         byte[] fotoAntes = tirarFoto();
         Empregado empregado = buscarEmpregado(emp);
         if (!atributo.equals("tipo")) throw new AtributoNaoExisteException();
@@ -661,6 +675,7 @@ public class Facade {
      * sindical a ser cobrada.
      */
     public void alteraEmpregado(String emp, String atributo, String valor, String idSindicato, String taxaSindical) throws ValidacaoException {
+        verificarSistemaAtivo();
         byte[] fotoAntes = tirarFoto();
         Empregado empregado = buscarEmpregado(emp);
 
@@ -673,12 +688,7 @@ public class Facade {
         }
 
         if (taxaSindical == null || taxaSindical.isEmpty()) throw new TaxaSindicalNulaException();
-        double taxaConvertida;
-        try {
-            taxaConvertida = Double.parseDouble(taxaSindical.replace(",", "."));
-        } catch (NumberFormatException e) {
-            throw new TaxaSindicalNaoNumericaException();
-        }
+        double taxaConvertida = converterParaDouble(taxaSindical, TaxaSindicalNaoNumericaException::new);
         if (taxaConvertida < 0) throw new TaxaSindicalNegativaException();
 
         empregado.sindicalizar(idSindicato, taxaConvertida);
@@ -690,6 +700,7 @@ public class Facade {
      * recebendo banco, agencia e conta corrente.
      */
     public void alteraEmpregado(String emp, String atributo, String valor1, String banco, String agencia, String contaCorrente) throws ValidacaoException {
+        verificarSistemaAtivo();
         byte[] fotoAntes = tirarFoto();
         Empregado empregado = buscarEmpregado(emp);
 
@@ -1001,6 +1012,7 @@ public class Facade {
      * em arquivo e sem persistir descontos sindicais (calculo "de previa").
      */
     public String totalFolha(String data) throws ValidacaoException {
+        verificarSistemaAtivo();
         LocalDate dataConvertida;
         try { dataConvertida = parseData(data); } catch (Exception e) { throw new DataInvalidaException(); }
         return formataValor(calcularFolha(dataConvertida, false).total);
@@ -1013,6 +1025,7 @@ public class Facade {
      * data for rodada novamente.
      */
     public void rodaFolha(String data, String saida) throws ValidacaoException {
+        verificarSistemaAtivo();
         byte[] fotoAntes = tirarFoto();
         LocalDate dataConvertida;
         try { dataConvertida = parseData(data); } catch (Exception e) { throw new DataInvalidaException(); }
@@ -1022,7 +1035,7 @@ public class Facade {
         try (PrintWriter out = new PrintWriter(new OutputStreamWriter(new FileOutputStream(saida), "UTF-8"))) {
             out.print(relatorio);
         } catch (IOException e) {
-            throw new RuntimeException("Erro ao escrever arquivo da folha: " + e.getMessage());
+            throw new RuntimeException("Erro ao escrever arquivo da folha: " + e.getMessage(), e);
         }
         registrarComando(fotoAntes);
     }
@@ -1042,7 +1055,7 @@ public class Facade {
      * na pilha de redo e restaura o estado anterior guardado na pilha de undo.
      */
     public void undo() throws ValidacaoException {
-        if (sistemaEncerrado) throw new SistemaEncerradoException();
+        verificarSistemaAtivo();
         if (pilhaUndo.isEmpty()) throw new NaoHaComandoDesfazerException();
 
         byte[] estadoAtual = tirarFoto();
@@ -1056,7 +1069,7 @@ public class Facade {
      * de undo e restaura o estado seguinte guardado na pilha de redo.
      */
     public void redo() throws ValidacaoException {
-        if (sistemaEncerrado) throw new SistemaEncerradoException();
+        verificarSistemaAtivo();
         if (pilhaRedo.isEmpty()) throw new NaoHaComandoRefazerException();
 
         byte[] estadoAtual = tirarFoto();
@@ -1069,6 +1082,3 @@ public class Facade {
 
 
 }
-
-
-
