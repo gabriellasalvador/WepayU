@@ -2,10 +2,10 @@ package br.ufal.ic.p2.wepayu.models;
 
 import br.ufal.ic.p2.wepayu.Exception.tipoempregado.EmpregadoNaoEhComissionadoException;
 import br.ufal.ic.p2.wepayu.Exception.tipoempregado.EmpregadoNaoEhHoristaException;
+import br.ufal.ic.p2.wepayu.models.sindicato.FiliacaoSindical;
+import br.ufal.ic.p2.wepayu.models.sindicato.NaoFiliado;
 import br.ufal.ic.p2.wepayu.models.pagamento.EmMaos;
 import br.ufal.ic.p2.wepayu.models.pagamento.MetodoPagamento;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.io.Serializable;
@@ -27,27 +27,22 @@ public abstract class Empregado implements Serializable{
     private String nome;
     private String endereco;
     private double salario;
-    // Flag simples de sindicalizacao; os demais dados do sindicato (idSindicato,
-    // taxaSindical, divida, taxas de servico) so tem sentido quando isso e true.
-    private boolean sindicalizado;
 
     /**
-     * Novo empregado sempre comeca nao sindicalizado; os demais dados de sindicato
-     * so sao preenchidos depois, via sindicalizar(...).
+     * Novo empregado sempre comeca nao sindicalizado (NaoFiliado); a filiacao
+     * so muda depois, via setSindicato(new Filiado(...)).
      */
     public Empregado(String id, String nome, String endereco, double salario) {
         this.id = id;
         this.nome = nome;
         this.endereco = endereco;
         this.salario = salario;
-        this.sindicalizado = false;
     }
 
     public String getId() { return id; }
     public String getNome() { return nome; }
     public String getEndereco() { return endereco; }
     public double getSalario() { return salario; }
-    public boolean isSindicalizado() { return sindicalizado; }
 
     /**
      * Cada subclasse concreta informa seu proprio tipo ("horista", "assalariado"
@@ -95,56 +90,26 @@ public abstract class Empregado implements Serializable{
         throw new EmpregadoNaoEhComissionadoException();
     }
 
-    // ---------- Dados de sindicalizacao (comuns a qualquer tipo de empregado) ----------
-    private String idSindicato;
-    private double taxaSindical;
-    // Saldo devedor acumulado de taxa sindical/taxas de servico ainda nao descontado
-    // em folha; e atualizado pela Facade a cada folha rodada (calcularDescontoSindicato).
-    private double dividaSindical = 0;
-    private List<TaxaServico> taxasServico = new ArrayList<>();
-
-    public String getIdSindicato() { return idSindicato; }
-    public double getTaxaSindical() { return taxaSindical; }
-
-
-    public double getDividaSindical() { return dividaSindical; }
-    public void setDividaSindical(double dividaSindical) {
-        this.dividaSindical = dividaSindical;
-    }
-
+    // ---------- Sindicato (comum a qualquer tipo de empregado) ----------
+    // State/Null Object: a situacao perante o sindicato e um objeto (Filiado ou
+    // NaoFiliado) que guarda os dados e as regras de sindicato (taxa sindical,
+    // taxas de servico, divida e desconto da folha). Todo empregado novo comeca
+    // como NaoFiliado.
+    private FiliacaoSindical sindicato = new NaoFiliado();
 
     /**
-     * Associa o empregado a um sindicato, definindo id e taxa sindical fixa.
+     * Devolve a situacao do empregado perante o sindicato. Nunca e nula: para quem
+     * nao e filiado devolve um NaoFiliado (use isFiliado() para saber).
      */
-    public void sindicalizar(String idSindicato, double taxaSindical) {
-        this.sindicalizado = true;
-        this.idSindicato = idSindicato;
-        this.taxaSindical = taxaSindical;
-    }
+    public FiliacaoSindical getSindicato() { return sindicato; }
 
     /**
-     * Remove a sindicalizacao do empregado, limpando id e taxa sindical.
-     * Note que a divida sindical acumulada (dividaSindical) e as taxas de servico
-     * ja lancadas nao sao apagadas aqui.
+     * Troca a situacao perante o sindicato: new Filiado(id, taxa) para filiar,
+     * new NaoFiliado() para desfiliar. Os dados da situacao anterior (divida e
+     * taxas de servico) somem junto com o objeto antigo.
      */
-    public void dessindicalizar() {
-        this.sindicalizado = false;
-        this.idSindicato = null;
-        this.taxaSindical = 0;
-    }
-
-    public void addTaxaServico(TaxaServico taxa) {
-        taxasServico.add(taxa);
-    }
-
-    /**
-     * Devolve uma visao somente leitura das taxas de servico do empregado.
-     * A lista interna nao e exposta: qualquer alteracao precisa passar por
-     * addTaxaServico, o que garante que o estado so muda por comandos da Facade
-     * (e, portanto, que cada mudanca entra no undo/redo).
-     */
-    public List<TaxaServico> getTaxasServico() {
-        return Collections.unmodifiableList(taxasServico);
+    public void setSindicato(FiliacaoSindical sindicato) {
+        this.sindicato = Objects.requireNonNull(sindicato, "sindicato");
     }
 
     public void setNome(String nome) { this.nome = nome; }
@@ -180,14 +145,11 @@ public abstract class Empregado implements Serializable{
      * nao perca os dados comuns que o empregado antigo ja tinha.
      */
     public void copiarEstadoComumDe(Empregado outro) {
-        this.sindicalizado = outro.sindicalizado;
-        this.idSindicato = outro.idSindicato;
-        this.taxaSindical = outro.taxaSindical;
-        // Copia defensiva: o novo empregado nao pode compartilhar a mesma lista com o antigo.
-        this.taxasServico = new ArrayList<>(outro.taxasServico);
+        // Copia independente: o novo empregado nao pode compartilhar a filiacao
+        // (divida e lista de taxas) com o antigo.
+        this.sindicato = outro.sindicato.copiar();
         // Pode compartilhar a referencia: as formas de pagamento sao imutaveis.
         this.metodoPagamento = outro.metodoPagamento;
-        this.dividaSindical = outro.dividaSindical;
 
     }
 

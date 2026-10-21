@@ -20,6 +20,9 @@ import br.ufal.ic.p2.wepayu.models.ResultadoVenda;
 import br.ufal.ic.p2.wepayu.models.TaxaServico;
 import br.ufal.ic.p2.wepayu.models.pagamento.Banco;
 import br.ufal.ic.p2.wepayu.models.pagamento.FabricaMetodoPagamento;
+import br.ufal.ic.p2.wepayu.models.sindicato.Filiado;
+import br.ufal.ic.p2.wepayu.models.sindicato.NaoFiliado;
+import br.ufal.ic.p2.wepayu.util.Dinheiro;
 
 
 import java.time.LocalDate;
@@ -227,7 +230,7 @@ public class Facade {
             case "comissao":
                 if (!"comissionado".equals(empregado.getTipo())) throw new EmpregadoNaoEhComissionadoException();
                 return formataValor(empregado.getComissao());
-            case "sindicalizado": return String.valueOf(empregado.isSindicalizado());
+            case "sindicalizado": return String.valueOf(empregado.getSindicato().isFiliado());
             case "metodoPagamento":
                 return empregado.getMetodoPagamento().getNome();
             // Banco, agencia e conta: quem decide se o empregado recebe em banco e a propria
@@ -238,12 +241,12 @@ public class Facade {
                 return empregado.getMetodoPagamento().getAgencia();
             case "contaCorrente":
                 return empregado.getMetodoPagamento().getContaCorrente();
+            // Id e taxa sindical: se o empregado nao for filiado, o proprio sindicato
+            // lanca EmpregadoNaoEhSindicalizadoException.
             case "idSindicato":
-                if (!empregado.isSindicalizado()) throw new EmpregadoNaoEhSindicalizadoException();
-                return empregado.getIdSindicato();
+                return empregado.getSindicato().getIdSindicato();
             case "taxaSindical":
-                if (!empregado.isSindicalizado()) throw new EmpregadoNaoEhSindicalizadoException();
-                return formataValor(empregado.getTaxaSindical());
+                return formataValor(empregado.getSindicato().getTaxaSindical());
             default: throw new AtributoNaoExisteException();
         }
     }
@@ -457,7 +460,7 @@ public class Facade {
      */
     private Empregado buscarPorIdSindicato(String membro) throws ValidacaoException {
         for (Empregado empregado : empregados.values()) {
-            if (empregado.isSindicalizado() && membro.equals(empregado.getIdSindicato())) {
+            if (empregado.getSindicato().isFiliado() && membro.equals(empregado.getSindicato().getIdSindicato())) {
                 return empregado;
             }
         }
@@ -518,7 +521,7 @@ public class Facade {
         double valorConvertido = converterParaDouble(valor, ValorNaoNumericoException::new);
         if (valorConvertido <= 0) throw new ValorNaoPositivoException();
 
-        empregado.addTaxaServico(new TaxaServico(dataConvertida, valorConvertido));
+        empregado.getSindicato().registrarTaxaServico(new TaxaServico(dataConvertida, valorConvertido));
         registrarComando(fotoAntes);
     }
 
@@ -531,7 +534,8 @@ public class Facade {
         if (emp == null || emp.isEmpty()) throw new IdentificacaoNulaException();
         Empregado empregado = empregados.get(emp);
         if (empregado == null) throw new EmpregadoNaoExisteException();
-        if (!empregado.isSindicalizado()) throw new EmpregadoNaoEhSindicalizadoException();
+        // Lanca EmpregadoNaoEhSindicalizadoException se nao for filiado (antes de validar as datas).
+        List<TaxaServico> taxas = empregado.getSindicato().getTaxasServico();
 
         LocalDate inicio;
         try { inicio = parseData(dataInicial); } catch (Exception e) { throw new DataInicialInvalidaException(); }
@@ -540,7 +544,7 @@ public class Facade {
         if (inicio.isAfter(fim)) throw new DataInicialPosteriorException();
 
         double total = 0;
-        for (TaxaServico taxa : empregado.getTaxasServico()) {
+        for (TaxaServico taxa : taxas) {
             LocalDate data = taxa.getData();
             if (!data.isBefore(inicio) && data.isBefore(fim)) {
                 total += taxa.getValor();
@@ -631,7 +635,7 @@ public class Facade {
                 break;
             case "sindicalizado":
                 if (valor.equals("false")) {
-                    empregado.dessindicalizar();
+                    empregado.setSindicato(new NaoFiliado());
                 } else {
                     throw new ValorSindicalizadoInvalidoException();
                 }
@@ -677,7 +681,7 @@ public class Facade {
         if (idSindicato == null || idSindicato.isEmpty()) throw new IdentificacaoSindicatoNulaException();
 
         for (Empregado outro : empregados.values()) {
-            if (outro != empregado && outro.isSindicalizado() && idSindicato.equals(outro.getIdSindicato())) {
+            if (outro != empregado && outro.getSindicato().isFiliado() && idSindicato.equals(outro.getSindicato().getIdSindicato())) {
                 throw new IdentificacaoSindicatoDuplicadaException();
             }
         }
@@ -686,7 +690,7 @@ public class Facade {
         double taxaConvertida = converterParaDouble(taxaSindical, TaxaSindicalNaoNumericaException::new);
         if (taxaConvertida < 0) throw new TaxaSindicalNegativaException();
 
-        empregado.sindicalizar(idSindicato, taxaConvertida);
+        empregado.setSindicato(new Filiado(idSindicato, taxaConvertida));
         registrarComando(fotoAntes);
     }
 
@@ -753,14 +757,6 @@ public class Facade {
     }
 
     /**
-     * Trunca (nao arredonda) um valor monetario para duas casas decimais,
-     * evitando problemas de imprecisao de ponto flutuante com um pequeno epsilon.
-     */
-    private double truncar(double valor) {
-        return Math.floor(valor * 100 + 1e-9) / 100.0;
-    }
-
-    /**
      * Horistas sao pagos toda sexta-feira.
      */
     private boolean isDiaPagamentoHorista(LocalDate data) {
@@ -792,37 +788,6 @@ public class Facade {
     private boolean isDiaPagamentoComissionado(LocalDate data) {
         if (data.isBefore(PRIMEIRO_PAGAMENTO_COMISSIONADO)) return false;
         return ChronoUnit.DAYS.between(PRIMEIRO_PAGAMENTO_COMISSIONADO, data) % 14 == 0;
-    }
-
-    // "aplicarMutacao" = true grava o novo saldo de divida no empregado (usado pelo rodaFolha);
-// false so simula, sem persistir nada (usado pelo totalFolha, que e' so uma previa)
-    /**
-     * Calcula o desconto do sindicato a ser aplicado no salario bruto de um empregado
-     * sindicalizado, somando a taxa sindical fixa do periodo com as taxas de servico
-     * lancadas dentro dele, e descontando isso (limitado ao bruto) da divida acumulada.
-     * Quando aplicarMutacao=true, o novo saldo devedor e persistido no empregado;
-     * quando false, o calculo e apenas uma simulacao (nao altera estado).
-     */
-    private double calcularDescontoSindicato(Empregado e, LocalDate inicioExclusive, LocalDate fimInclusive,
-                                             int diasNoPeriodo, double bruto, boolean aplicarMutacao) {
-        if (!e.isSindicalizado()) return 0;
-
-        double cobrancaPeriodo = e.getTaxaSindical() * diasNoPeriodo;
-        for (TaxaServico t : e.getTaxasServico()) {
-            LocalDate d = t.getData();
-            if (d.isAfter(inicioExclusive) && !d.isAfter(fimInclusive)) {
-                cobrancaPeriodo += t.getValor();
-            }
-        }
-
-        double dividaTotal = e.getDividaSindical() + cobrancaPeriodo;
-        double descontosAplicados = truncar(Math.min(dividaTotal, bruto));
-
-        if (aplicarMutacao) {
-            e.setDividaSindical(truncar(dividaTotal - descontosAplicados));
-        }
-
-        return descontosAplicados;
     }
 
     /**
@@ -872,8 +837,8 @@ public class Facade {
                         extras += Math.max(0, c.getHoras() - 8);
                     }
                 }
-                double bruto = truncar(normais * e.getSalario() + extras * e.getSalario() * 1.5);
-                double descontos = calcularDescontoSindicato(e, inicio, data, 7, bruto, aplicarMutacao);
+                double bruto = Dinheiro.truncar(normais * e.getSalario() + extras * e.getSalario() * 1.5);
+                double descontos = e.getSindicato().calcularDesconto(inicio, data, 7, bruto, aplicarMutacao);
                 double liquido = bruto - descontos;
 
                 sb.append(String.format("%-36s %5s %5s %13s %9s %15s %s",
@@ -911,8 +876,8 @@ public class Facade {
             LocalDate inicioMes = mes.atDay(1).minusDays(1);
             int diasNoMes = mes.lengthOfMonth();
             for (Empregado e : assalariados) {
-                double bruto = truncar(e.getSalario());
-                double descontos = calcularDescontoSindicato(e, inicioMes, data, diasNoMes, bruto, aplicarMutacao);
+                double bruto = Dinheiro.truncar(e.getSalario());
+                double descontos = e.getSindicato().calcularDesconto(inicioMes, data, diasNoMes, bruto, aplicarMutacao);
                 double liquido = bruto - descontos;
 
                 sb.append(String.format("%-48s %13s %9s %15s %s",
@@ -955,13 +920,13 @@ public class Facade {
                     if (d.isAfter(inicio) && !d.isAfter(data)) vendasPeriodo += v.getValor();
                 }
 
-                double fixo = truncar(e.getSalario() * 24 / 52);
+                double fixo = Dinheiro.truncar(e.getSalario() * 24 / 52);
                 double comissaoValor;
-                try { comissaoValor = truncar(vendasPeriodo * e.getComissao()); }
+                try { comissaoValor = Dinheiro.truncar(vendasPeriodo * e.getComissao()); }
                 catch (EmpregadoNaoEhComissionadoException ex) { comissaoValor = 0; }
 
-                double bruto = truncar(fixo + comissaoValor);
-                double descontos = calcularDescontoSindicato(e, inicio, data, 14, bruto, aplicarMutacao);
+                double bruto = Dinheiro.truncar(fixo + comissaoValor);
+                double descontos = e.getSindicato().calcularDesconto(inicio, data, 14, bruto, aplicarMutacao);
                 double liquido = bruto - descontos;
 
                 sb.append(String.format("%-21s %8s %8s %8s %13s %9s %15s %s",
@@ -980,10 +945,10 @@ public class Facade {
         sb.append("\r\n");
         totalGeral += totBrutoC;
 
-        sb.append("TOTAL FOLHA: ").append(formataValor(truncar(totalGeral))).append("\r\n");
+        sb.append("TOTAL FOLHA: ").append(formataValor(Dinheiro.truncar(totalGeral))).append("\r\n");
 
         resultado.relatorio = sb.toString();
-        resultado.total = truncar(totalGeral);
+        resultado.total = Dinheiro.truncar(totalGeral);
         return resultado;
     }
 
