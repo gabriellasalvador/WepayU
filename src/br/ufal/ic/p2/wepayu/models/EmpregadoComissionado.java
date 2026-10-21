@@ -1,8 +1,9 @@
 package br.ufal.ic.p2.wepayu.models;
- 
+
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
- 
+
 /**
  * Empregado comissionado: recebe um salario fixo quinzenal (proporcional ao salario
  * mensal informado) mais uma comissao sobre o total de vendas realizadas no periodo,
@@ -15,33 +16,34 @@ public class EmpregadoComissionado extends Empregado {
     private double comissao;
     // Historico de todas as vendas lancadas para este empregado.
     private List<ResultadoVenda> vendas = new ArrayList<>();
- 
+
     public EmpregadoComissionado(String id, String nome, String endereco, double salario, double comissao) {
         super(id, nome, endereco, salario);
         this.comissao = comissao;
     }
- 
+
     @Override
     public String getTipo() { return "comissionado"; }
- 
+
     @Override
     public double getComissao() { return comissao; }
- 
+
     @Override
     public void setComissao(double comissao) {
         this.comissao = comissao;
     }
- 
+
     @Override
     public void addVenda(ResultadoVenda venda) {
         vendas.add(venda);
     }
- 
+
+    /**
+     * Devolve uma visao somente leitura das vendas; novas vendas so entram por
+     * addVenda, nunca alterando a lista interna de fora da classe.
+     */
     @Override
     public List<ResultadoVenda> getVendas() {
-        return vendas;
+        return Collections.unmodifiableList(vendas);
     }
 }
- 
-
-
