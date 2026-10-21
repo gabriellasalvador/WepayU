@@ -6,7 +6,6 @@ import br.ufal.ic.p2.wepayu.Exception.lancamentos.*;
 import br.ufal.ic.p2.wepayu.Exception.pagamento.AgenciaNulaException;
 import br.ufal.ic.p2.wepayu.Exception.pagamento.BancoNuloException;
 import br.ufal.ic.p2.wepayu.Exception.pagamento.ContaCorrenteNulaException;
-import br.ufal.ic.p2.wepayu.Exception.pagamento.MetodoPagamentoInvalidoException;
 import br.ufal.ic.p2.wepayu.Exception.sindicato.*;
 import br.ufal.ic.p2.wepayu.Exception.sistema.NaoHaComandoDesfazerException;
 import br.ufal.ic.p2.wepayu.Exception.sistema.NaoHaComandoRefazerException;
@@ -19,6 +18,8 @@ import br.ufal.ic.p2.wepayu.models.EmpregadoComissionado;
 import br.ufal.ic.p2.wepayu.models.EmpregadoHorista;
 import br.ufal.ic.p2.wepayu.models.ResultadoVenda;
 import br.ufal.ic.p2.wepayu.models.TaxaServico;
+import br.ufal.ic.p2.wepayu.models.pagamento.Banco;
+import br.ufal.ic.p2.wepayu.models.pagamento.FabricaMetodoPagamento;
 
 
 import java.time.LocalDate;
@@ -228,16 +229,15 @@ public class Facade {
                 return formataValor(empregado.getComissao());
             case "sindicalizado": return String.valueOf(empregado.isSindicalizado());
             case "metodoPagamento":
-                return empregado.getMetodoPagamento();
+                return empregado.getMetodoPagamento().getNome();
+            // Banco, agencia e conta: quem decide se o empregado recebe em banco e a propria
+            // forma de pagamento (so Banco responde; as outras lancam EmpregadoNaoRecebeEmBancoException).
             case "banco":
-                if (!"banco".equals(empregado.getMetodoPagamento())) throw new EmpregadoNaoRecebeEmBancoException();
-                return empregado.getBanco();
+                return empregado.getMetodoPagamento().getBanco();
             case "agencia":
-                if (!"banco".equals(empregado.getMetodoPagamento())) throw new EmpregadoNaoRecebeEmBancoException();
-                return empregado.getAgencia();
+                return empregado.getMetodoPagamento().getAgencia();
             case "contaCorrente":
-                if (!"banco".equals(empregado.getMetodoPagamento())) throw new EmpregadoNaoRecebeEmBancoException();
-                return empregado.getContaCorrente();
+                return empregado.getMetodoPagamento().getContaCorrente();
             case "idSindicato":
                 if (!empregado.isSindicalizado()) throw new EmpregadoNaoEhSindicalizadoException();
                 return empregado.getIdSindicato();
@@ -626,13 +626,8 @@ public class Facade {
                 trocarTipo(empregado, valor, null, null);
                 break;
             case "metodoPagamento":
-                if (valor.equals("emMaos")) {
-                    empregado.definirPagamentoEmMaos();
-                } else if (valor.equals("correios")) {
-                    empregado.definirPagamentoCorreios();
-                } else {
-                    throw new MetodoPagamentoInvalidoException();
-                }
+                // A fabrica escolhe a classe certa (EmMaos ou Correios) ou lanca MetodoPagamentoInvalidoException.
+                empregado.setMetodoPagamento(FabricaMetodoPagamento.criarSemDadosExtras(valor));
                 break;
             case "sindicalizado":
                 if (valor.equals("false")) {
@@ -708,7 +703,7 @@ public class Facade {
         if (agencia == null || agencia.isEmpty()) throw new AgenciaNulaException();
         if (contaCorrente == null || contaCorrente.isEmpty()) throw new ContaCorrenteNulaException();
 
-        empregado.definirPagamentoBanco(banco, agencia, contaCorrente);
+        empregado.setMetodoPagamento(new Banco(banco, agencia, contaCorrente));
         registrarComando(fotoAntes);
     }
 
@@ -799,21 +794,6 @@ public class Facade {
         return ChronoUnit.DAYS.between(PRIMEIRO_PAGAMENTO_COMISSIONADO, data) % 14 == 0;
     }
 
-    /**
-     * Monta a descricao textual do metodo de pagamento de um empregado,
-     * conforme exibido na coluna "Metodo" do relatorio de folha.
-     */
-    private String metodoDescricao(Empregado e) {
-        switch (e.getMetodoPagamento()) {
-            case "banco":
-                return e.getBanco() + ", Ag. " + e.getAgencia() + " CC " + e.getContaCorrente();
-            case "correios":
-                return "Correios, " + e.getEndereco();
-            default:
-                return "Em maos";
-        }
-    }
-
     // "aplicarMutacao" = true grava o novo saldo de divida no empregado (usado pelo rodaFolha);
 // false so simula, sem persistir nada (usado pelo totalFolha, que e' so uma previa)
     /**
@@ -899,7 +879,7 @@ public class Facade {
                 sb.append(String.format("%-36s %5s %5s %13s %9s %15s %s",
                         e.getNome(), formataHoras(normais), formataHoras(extras),
                         formataValor(bruto), formataValor(descontos), formataValor(liquido),
-                        metodoDescricao(e))).append("\r\n");
+                        e.getMetodoPagamento().descreverParaFolha(e.getEndereco()))).append("\r\n");
 
                 totHoras += normais; totExtra += extras; totBrutoH += bruto; totDescH += descontos; totLiqH += liquido;
             }
@@ -937,7 +917,7 @@ public class Facade {
 
                 sb.append(String.format("%-48s %13s %9s %15s %s",
                         e.getNome(), formataValor(bruto), formataValor(descontos), formataValor(liquido),
-                        metodoDescricao(e))).append("\r\n");
+                        e.getMetodoPagamento().descreverParaFolha(e.getEndereco()))).append("\r\n");
 
                 totBrutoA += bruto; totDescA += descontos; totLiqA += liquido;
             }
@@ -987,7 +967,7 @@ public class Facade {
                 sb.append(String.format("%-21s %8s %8s %8s %13s %9s %15s %s",
                         e.getNome(), formataValor(fixo), formataValor(vendasPeriodo), formataValor(comissaoValor),
                         formataValor(bruto), formataValor(descontos), formataValor(liquido),
-                        metodoDescricao(e))).append("\r\n");
+                        e.getMetodoPagamento().descreverParaFolha(e.getEndereco()))).append("\r\n");
 
                 totFixo += fixo; totVendas += vendasPeriodo; totComissao += comissaoValor;
                 totBrutoC += bruto; totDescC += descontos; totLiqC += liquido;

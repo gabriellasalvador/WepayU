@@ -2,9 +2,12 @@ package br.ufal.ic.p2.wepayu.models;
 
 import br.ufal.ic.p2.wepayu.Exception.tipoempregado.EmpregadoNaoEhComissionadoException;
 import br.ufal.ic.p2.wepayu.Exception.tipoempregado.EmpregadoNaoEhHoristaException;
+import br.ufal.ic.p2.wepayu.models.pagamento.EmMaos;
+import br.ufal.ic.p2.wepayu.models.pagamento.MetodoPagamento;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.io.Serializable;
 
 /**
@@ -149,43 +152,24 @@ public abstract class Empregado implements Serializable{
     public void setSalario(double salario) { this.salario = salario; }
 
     // ---------- Forma de pagamento (comum a qualquer tipo de empregado) ----------
+    // Strategy: a forma de pagamento e um objeto (EmMaos, Correios ou Banco) que
+    // sabe se descrever e, no caso do banco, guarda seus proprios dados.
     // Por padrao, todo empregado novo recebe pagamento em maos.
-    private String metodoPagamento = "emMaos";
-    private String banco;
-    private String agencia;
-    private String contaCorrente;
-
-    public String getMetodoPagamento() { return metodoPagamento; }
-    public String getBanco() { return banco; }
-    public String getAgencia() { return agencia; }
-    public String getContaCorrente() { return contaCorrente; }
+    private MetodoPagamento metodoPagamento = new EmMaos();
 
     /**
-     * Muda a forma de pagamento para "em maos", limpando quaisquer dados bancarios
-     * que tenham sido definidos anteriormente.
+     * Devolve a forma de pagamento atual do empregado. Como as formas de
+     * pagamento sao imutaveis, o objeto pode ser devolvido sem copia.
      */
-    public void definirPagamentoEmMaos() {
-        metodoPagamento = "emMaos";
-        banco = null; agencia = null; contaCorrente = null;
-    }
+    public MetodoPagamento getMetodoPagamento() { return metodoPagamento; }
 
     /**
-     * Muda a forma de pagamento para "correios", limpando quaisquer dados bancarios
-     * que tenham sido definidos anteriormente.
+     * Troca a forma de pagamento do empregado. Os dados da forma anterior (por
+     * exemplo, a conta bancaria) somem junto com o objeto antigo, sem precisar
+     * de nenhuma limpeza manual.
      */
-    public void definirPagamentoCorreios() {
-        metodoPagamento = "correios";
-        banco = null; agencia = null; contaCorrente = null;
-    }
-
-    /**
-     * Muda a forma de pagamento para "banco", registrando os dados bancarios informados.
-     */
-    public void definirPagamentoBanco(String banco, String agencia, String contaCorrente) {
-        metodoPagamento = "banco";
-        this.banco = banco;
-        this.agencia = agencia;
-        this.contaCorrente = contaCorrente;
+    public void setMetodoPagamento(MetodoPagamento metodoPagamento) {
+        this.metodoPagamento = Objects.requireNonNull(metodoPagamento, "metodoPagamento");
     }
 
     /**
@@ -201,10 +185,8 @@ public abstract class Empregado implements Serializable{
         this.taxaSindical = outro.taxaSindical;
         // Copia defensiva: o novo empregado nao pode compartilhar a mesma lista com o antigo.
         this.taxasServico = new ArrayList<>(outro.taxasServico);
+        // Pode compartilhar a referencia: as formas de pagamento sao imutaveis.
         this.metodoPagamento = outro.metodoPagamento;
-        this.banco = outro.banco;
-        this.agencia = outro.agencia;
-        this.contaCorrente = outro.contaCorrente;
         this.dividaSindical = outro.dividaSindical;
 
     }
