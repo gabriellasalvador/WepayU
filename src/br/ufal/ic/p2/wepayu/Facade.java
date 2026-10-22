@@ -18,6 +18,7 @@ import br.ufal.ic.p2.wepayu.models.EmpregadoComissionado;
 import br.ufal.ic.p2.wepayu.models.EmpregadoHorista;
 import br.ufal.ic.p2.wepayu.models.ResultadoVenda;
 import br.ufal.ic.p2.wepayu.models.TaxaServico;
+import br.ufal.ic.p2.wepayu.models.folha.CategoriaFolha;
 import br.ufal.ic.p2.wepayu.models.pagamento.Banco;
 import br.ufal.ic.p2.wepayu.models.pagamento.FabricaMetodoPagamento;
 import br.ufal.ic.p2.wepayu.models.sindicato.Filiado;
@@ -29,10 +30,7 @@ import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.time.DayOfWeek;
-import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
-import java.time.temporal.ChronoUnit;
 import java.io.PrintWriter;
 import java.io.FileOutputStream;
 import java.io.OutputStreamWriter;
@@ -227,8 +225,8 @@ public class Facade {
             case "endereco": return empregado.getEndereco();
             case "tipo": return empregado.getTipo();
             case "salario": return formataValor(empregado.getSalario());
+            // Comissao: quem nao e comissionado lanca EmpregadoNaoEhComissionadoException sozinho.
             case "comissao":
-                if (!"comissionado".equals(empregado.getTipo())) throw new EmpregadoNaoEhComissionadoException();
                 return formataValor(empregado.getComissao());
             case "sindicalizado": return String.valueOf(empregado.getSindicato().isFiliado());
             case "metodoPagamento":
@@ -713,9 +711,6 @@ public class Facade {
 
 // ===================== FOLHA DE PAGAMENTO (US7) =====================
 
-    // Data do primeiro pagamento de comissionados, usada como referencia para
-    // calcular se uma data qualquer cai em um ciclo de pagamento quinzenal.
-    private static final LocalDate PRIMEIRO_PAGAMENTO_COMISSIONADO = LocalDate.of(2005, 1, 14);
     // Cache das folhas ja geradas por data, para que rodaFolha() nao recalcule
     // (nem remova saldo de divida sindical duas vezes) se chamado de novo com a mesma data.
     private Map<LocalDate, String> folhasGeradas = new HashMap<>();
@@ -757,43 +752,48 @@ public class Facade {
     }
 
     /**
-     * Horistas sao pagos toda sexta-feira.
+     * Linha de cabecalho da tabela de uma secao: nomes das colunas alinhados a esquerda.
      */
-    private boolean isDiaPagamentoHorista(LocalDate data) {
-        return data.getDayOfWeek() == DayOfWeek.FRIDAY;
-    }
-
-    /**
-     * Calcula o ultimo dia util (nao sabado/domingo) do mes informado.
-     */
-    private LocalDate ultimoDiaUtilDoMes(YearMonth mes) {
-        LocalDate dia = mes.atEndOfMonth();
-        while (dia.getDayOfWeek() == DayOfWeek.SATURDAY || dia.getDayOfWeek() == DayOfWeek.SUNDAY) {
-            dia = dia.minusDays(1);
+    private String formatarCabecalho(CategoriaFolha categoria) {
+        StringBuilder sb = new StringBuilder(String.format("%-" + categoria.getLarguraDoNome() + "s", "Nome"));
+        for (CategoriaFolha.Coluna coluna : categoria.getColunas()) {
+            sb.append(' ').append(String.format("%-" + coluna.getLargura() + "s", coluna.getTitulo()));
         }
-        return dia;
+        return sb.append(" Metodo").toString();
     }
 
     /**
-     * Assalariados sao pagos no ultimo dia util de cada mes.
+     * Linha de '=' logo abaixo do cabecalho, com a largura de cada coluna (38 para o metodo).
      */
-    private boolean isDiaPagamentoAssalariado(LocalDate data) {
-        return data.equals(ultimoDiaUtilDoMes(YearMonth.from(data)));
+    private String formatarSeparador(CategoriaFolha categoria) {
+        StringBuilder sb = new StringBuilder(repete('=', categoria.getLarguraDoNome()));
+        for (CategoriaFolha.Coluna coluna : categoria.getColunas()) {
+            sb.append(' ').append(repete('=', coluna.getLargura()));
+        }
+        return sb.append(' ').append(repete('=', 38)).toString();
     }
 
     /**
-     * Comissionados sao pagos a cada 14 dias, a partir da data de referencia
-     * PRIMEIRO_PAGAMENTO_COMISSIONADO (14/01/2005).
+     * Formata os valores de uma linha (ou do total) da tabela: o texto inicial alinhado
+     * a esquerda na coluna de nomes e cada valor alinhado a direita na sua coluna.
+     * Valores de colunas de horas usam formataHoras; os demais, formataValor.
      */
-    private boolean isDiaPagamentoComissionado(LocalDate data) {
-        if (data.isBefore(PRIMEIRO_PAGAMENTO_COMISSIONADO)) return false;
-        return ChronoUnit.DAYS.between(PRIMEIRO_PAGAMENTO_COMISSIONADO, data) % 14 == 0;
+    private String formatarValores(CategoriaFolha categoria, String texto, double[] valores) {
+        StringBuilder sb = new StringBuilder(String.format("%-" + categoria.getLarguraDoNome() + "s", texto));
+        for (int i = 0; i < valores.length; i++) {
+            CategoriaFolha.Coluna coluna = categoria.getColunas().get(i);
+            String valor = coluna.isEmHoras() ? formataHoras(valores[i]) : formataValor(valores[i]);
+            sb.append(' ').append(String.format("%" + coluna.getLargura() + "s", valor));
+        }
+        return sb.toString();
     }
 
     /**
-     * Calcula (e formata como texto) a folha de pagamento completa referente a uma data,
-     * percorrendo separadamente horistas, assalariados e comissionados, e so incluindo
-     * valores de fato pagos para quem cai no dia de pagamento correspondente aquele tipo.
+     * Calcula (e formata como texto) a folha de pagamento completa referente a uma data.
+     * Para cada secao (CategoriaFolha), lista os empregados dela em ordem alfabetica e,
+     * para os que recebem naquela data segundo a propria agenda de pagamento, pede ao
+     * empregado o calculo da sua linha (Empregado.calcularLinhaFolha). A Facade so
+     * monta a tabela e os totais; nao sabe como cada tipo calcula o salario.
      * aplicarMutacao controla se o desconto sindical calculado deve ser persistido
      * (rodaFolha) ou apenas simulado (totalFolha).
      */
@@ -808,142 +808,33 @@ public class Facade {
 
         double totalGeral = 0;
 
-        // ---------- HORISTAS ----------
-        List<Empregado> horistas = new ArrayList<>();
-        for (Empregado e : empregados.values()) if ("horista".equals(e.getTipo())) horistas.add(e);
-        horistas.sort(Comparator.comparing(Empregado::getNome));
+        for (CategoriaFolha categoria : CategoriaFolha.values()) {
+            List<Empregado> membros = new ArrayList<>();
+            for (Empregado e : empregados.values()) if (e.getCategoria() == categoria) membros.add(e);
+            membros.sort(Comparator.comparing(Empregado::getNome));
 
-        sb.append(bordaTopo()).append("\r\n");
-        sb.append(bordaCategoria("HORISTAS")).append("\r\n");
-        sb.append(bordaTopo()).append("\r\n");
-        sb.append(String.format("%-36s %-5s %-5s %-13s %-9s %-15s %s",
-                "Nome", "Horas", "Extra", "Salario Bruto", "Descontos", "Salario Liquido", "Metodo")).append("\r\n");
-        sb.append(String.format("%-36s %5s %5s %13s %9s %15s %s",
-                repete('=', 36), repete('=', 5), repete('=', 5), repete('=', 13), repete('=', 9), repete('=', 15), repete('=', 38))).append("\r\n");
+            sb.append(bordaTopo()).append("\r\n");
+            sb.append(bordaCategoria(categoria.getTitulo())).append("\r\n");
+            sb.append(bordaTopo()).append("\r\n");
+            sb.append(formatarCabecalho(categoria)).append("\r\n");
+            sb.append(formatarSeparador(categoria)).append("\r\n");
 
-        double totHoras = 0, totExtra = 0, totBrutoH = 0, totDescH = 0, totLiqH = 0;
-        boolean diaHorista = isDiaPagamentoHorista(data);
-        if (diaHorista) {
-            LocalDate inicio = data.minusDays(7);
-            for (Empregado e : horistas) {
-                List<CartaoDePonto> cartoes;
-                try { cartoes = e.getCartoes(); } catch (EmpregadoNaoEhHoristaException ex) { cartoes = new ArrayList<>(); }
+            double[] totais = new double[categoria.getColunas().size()];
+            for (Empregado e : membros) {
+                if (!e.getAgenda().isDiaDePagamento(data)) continue;
 
-                double normais = 0, extras = 0;
-                for (CartaoDePonto c : cartoes) {
-                    LocalDate d = c.getData();
-                    if (d.isAfter(inicio) && !d.isAfter(data)) {
-                        normais += Math.min(c.getHoras(), 8);
-                        extras += Math.max(0, c.getHoras() - 8);
-                    }
-                }
-                double bruto = Dinheiro.truncar(normais * e.getSalario() + extras * e.getSalario() * 1.5);
-                double descontos = e.getSindicato().calcularDesconto(inicio, data, 7, bruto, aplicarMutacao);
-                double liquido = bruto - descontos;
+                double[] valores = e.calcularLinhaFolha(data, aplicarMutacao).getValores();
+                sb.append(formatarValores(categoria, e.getNome(), valores))
+                        .append(' ').append(e.getMetodoPagamento().descreverParaFolha(e.getEndereco()))
+                        .append("\r\n");
 
-                sb.append(String.format("%-36s %5s %5s %13s %9s %15s %s",
-                        e.getNome(), formataHoras(normais), formataHoras(extras),
-                        formataValor(bruto), formataValor(descontos), formataValor(liquido),
-                        e.getMetodoPagamento().descreverParaFolha(e.getEndereco()))).append("\r\n");
-
-                totHoras += normais; totExtra += extras; totBrutoH += bruto; totDescH += descontos; totLiqH += liquido;
+                for (int i = 0; i < totais.length; i++) totais[i] += valores[i];
             }
+            sb.append("\r\n");
+            sb.append(formatarValores(categoria, categoria.getRotuloDoTotal(), totais)).append("\r\n");
+            sb.append("\r\n");
+            totalGeral += totais[categoria.getIndiceDoBruto()];
         }
-        sb.append("\r\n");
-        sb.append(String.format("%-36s %5s %5s %13s %9s %15s",
-                "TOTAL HORISTAS", formataHoras(totHoras), formataHoras(totExtra),
-                formataValor(totBrutoH), formataValor(totDescH), formataValor(totLiqH))).append("\r\n");
-        sb.append("\r\n");
-        totalGeral += totBrutoH;
-
-        // ---------- ASSALARIADOS ----------
-        List<Empregado> assalariados = new ArrayList<>();
-        for (Empregado e : empregados.values()) if ("assalariado".equals(e.getTipo())) assalariados.add(e);
-        assalariados.sort(Comparator.comparing(Empregado::getNome));
-
-        sb.append(bordaTopo()).append("\r\n");
-        sb.append(bordaCategoria("ASSALARIADOS")).append("\r\n");
-        sb.append(bordaTopo()).append("\r\n");
-        sb.append(String.format("%-48s %-13s %-9s %-15s %s",
-                "Nome", "Salario Bruto", "Descontos", "Salario Liquido", "Metodo")).append("\r\n");
-        sb.append(String.format("%-48s %13s %9s %15s %s",
-                repete('=', 48), repete('=', 13), repete('=', 9), repete('=', 15), repete('=', 38))).append("\r\n");
-
-        double totBrutoA = 0, totDescA = 0, totLiqA = 0;
-        boolean diaAssalariado = isDiaPagamentoAssalariado(data);
-        if (diaAssalariado) {
-            YearMonth mes = YearMonth.from(data);
-            LocalDate inicioMes = mes.atDay(1).minusDays(1);
-            int diasNoMes = mes.lengthOfMonth();
-            for (Empregado e : assalariados) {
-                double bruto = Dinheiro.truncar(e.getSalario());
-                double descontos = e.getSindicato().calcularDesconto(inicioMes, data, diasNoMes, bruto, aplicarMutacao);
-                double liquido = bruto - descontos;
-
-                sb.append(String.format("%-48s %13s %9s %15s %s",
-                        e.getNome(), formataValor(bruto), formataValor(descontos), formataValor(liquido),
-                        e.getMetodoPagamento().descreverParaFolha(e.getEndereco()))).append("\r\n");
-
-                totBrutoA += bruto; totDescA += descontos; totLiqA += liquido;
-            }
-        }
-        sb.append("\r\n");
-        sb.append(String.format("%-48s %13s %9s %15s",
-                "TOTAL ASSALARIADOS", formataValor(totBrutoA), formataValor(totDescA), formataValor(totLiqA))).append("\r\n");
-        sb.append("\r\n");
-        totalGeral += totBrutoA;
-
-        // ---------- COMISSIONADOS ----------
-        List<Empregado> comissionados = new ArrayList<>();
-        for (Empregado e : empregados.values()) if ("comissionado".equals(e.getTipo())) comissionados.add(e);
-        comissionados.sort(Comparator.comparing(Empregado::getNome));
-
-        sb.append(bordaTopo()).append("\r\n");
-        sb.append(bordaCategoria("COMISSIONADOS")).append("\r\n");
-        sb.append(bordaTopo()).append("\r\n");
-        sb.append(String.format("%-21s %-8s %-8s %-8s %-13s %-9s %-15s %s",
-                "Nome", "Fixo", "Vendas", "Comissao", "Salario Bruto", "Descontos", "Salario Liquido", "Metodo")).append("\r\n");
-        sb.append(String.format("%-21s %8s %8s %8s %13s %9s %15s %s",
-                repete('=', 21), repete('=', 8), repete('=', 8), repete('=', 8), repete('=', 13), repete('=', 9), repete('=', 15), repete('=', 38))).append("\r\n");
-
-        double totFixo = 0, totVendas = 0, totComissao = 0, totBrutoC = 0, totDescC = 0, totLiqC = 0;
-        boolean diaComissionado = isDiaPagamentoComissionado(data);
-        if (diaComissionado) {
-            LocalDate inicio = data.minusDays(14);
-            for (Empregado e : comissionados) {
-                List<ResultadoVenda> vendas;
-                try { vendas = e.getVendas(); } catch (EmpregadoNaoEhComissionadoException ex) { vendas = new ArrayList<>(); }
-
-                double vendasPeriodo = 0;
-                for (ResultadoVenda v : vendas) {
-                    LocalDate d = v.getData();
-                    if (d.isAfter(inicio) && !d.isAfter(data)) vendasPeriodo += v.getValor();
-                }
-
-                double fixo = Dinheiro.truncar(e.getSalario() * 24 / 52);
-                double comissaoValor;
-                try { comissaoValor = Dinheiro.truncar(vendasPeriodo * e.getComissao()); }
-                catch (EmpregadoNaoEhComissionadoException ex) { comissaoValor = 0; }
-
-                double bruto = Dinheiro.truncar(fixo + comissaoValor);
-                double descontos = e.getSindicato().calcularDesconto(inicio, data, 14, bruto, aplicarMutacao);
-                double liquido = bruto - descontos;
-
-                sb.append(String.format("%-21s %8s %8s %8s %13s %9s %15s %s",
-                        e.getNome(), formataValor(fixo), formataValor(vendasPeriodo), formataValor(comissaoValor),
-                        formataValor(bruto), formataValor(descontos), formataValor(liquido),
-                        e.getMetodoPagamento().descreverParaFolha(e.getEndereco()))).append("\r\n");
-
-                totFixo += fixo; totVendas += vendasPeriodo; totComissao += comissaoValor;
-                totBrutoC += bruto; totDescC += descontos; totLiqC += liquido;
-            }
-        }
-        sb.append("\r\n");
-        sb.append(String.format("%-21s %8s %8s %8s %13s %9s %15s",
-                "TOTAL COMISSIONADOS", formataValor(totFixo), formataValor(totVendas), formataValor(totComissao),
-                formataValor(totBrutoC), formataValor(totDescC), formataValor(totLiqC))).append("\r\n");
-        sb.append("\r\n");
-        totalGeral += totBrutoC;
 
         sb.append("TOTAL FOLHA: ").append(formataValor(Dinheiro.truncar(totalGeral))).append("\r\n");
 

@@ -2,10 +2,14 @@ package br.ufal.ic.p2.wepayu.models;
 
 import br.ufal.ic.p2.wepayu.Exception.tipoempregado.EmpregadoNaoEhComissionadoException;
 import br.ufal.ic.p2.wepayu.Exception.tipoempregado.EmpregadoNaoEhHoristaException;
+import br.ufal.ic.p2.wepayu.models.agenda.AgendaPagamento;
+import br.ufal.ic.p2.wepayu.models.folha.CategoriaFolha;
+import br.ufal.ic.p2.wepayu.models.folha.LinhaFolha;
 import br.ufal.ic.p2.wepayu.models.sindicato.FiliacaoSindical;
 import br.ufal.ic.p2.wepayu.models.sindicato.NaoFiliado;
 import br.ufal.ic.p2.wepayu.models.pagamento.EmMaos;
 import br.ufal.ic.p2.wepayu.models.pagamento.MetodoPagamento;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Objects;
 import java.io.Serializable;
@@ -27,16 +31,22 @@ public abstract class Empregado implements Serializable{
     private String nome;
     private String endereco;
     private double salario;
+    // Strategy: define quando e pago e qual periodo cada pagamento cobre.
+    private final AgendaPagamento agenda;
 
     /**
      * Novo empregado sempre comeca nao sindicalizado (NaoFiliado); a filiacao
      * so muda depois, via setSindicato(new Filiado(...)).
+     *
+     * @param agenda agenda de pagamento do empregado; cada tipo informa a sua padrao
+     *               (horista: semanal 5, assalariado: mensal $, comissionado: semanal 2 5)
      */
-    public Empregado(String id, String nome, String endereco, double salario) {
+    public Empregado(String id, String nome, String endereco, double salario, AgendaPagamento agenda) {
         this.id = id;
         this.nome = nome;
         this.endereco = endereco;
         this.salario = salario;
+        this.agenda = agenda;
     }
 
     public String getId() { return id; }
@@ -44,12 +54,45 @@ public abstract class Empregado implements Serializable{
     public String getEndereco() { return endereco; }
     public double getSalario() { return salario; }
 
+    /** Agenda de pagamento do empregado (quando e pago e qual periodo cada pagamento cobre). */
+    public AgendaPagamento getAgenda() { return agenda; }
+
     /**
      * Cada subclasse concreta informa seu proprio tipo ("horista", "assalariado"
      * ou "comissionado"), usado pela Facade para decidir regras de calculo e
      * validacao especificas.
      */
     public abstract String getTipo();
+
+    /**
+     * Informa em qual secao do relatorio da folha este empregado aparece. Cada tipo
+     * responde pelo seu proprio caso, entao a Facade nao precisa comparar o tipo.
+     */
+    public abstract CategoriaFolha getCategoria();
+
+    /**
+     * Calcula os valores especificos do tipo para o periodo (inicioExclusive, fimInclusive],
+     * na ordem das colunas da sua CategoriaFolha, sem os descontos nem o liquido. O ULTIMO
+     * valor devolvido deve ser sempre o salario bruto. E aqui que cada tipo de empregado
+     * aplica a sua propria regra de salario (horas, parte fixa, comissao etc.).
+     */
+    protected abstract double[] calcularParcelas(LocalDate inicioExclusive, LocalDate fimInclusive);
+
+    /**
+     * Calcula o pagamento deste empregado na data informada. Metodo-modelo (template
+     * method): o periodo vem da agenda, os valores do tipo vem de calcularParcelas
+     * (implementado em cada subclasse) e o desconto vem da situacao no sindicato.
+     *
+     * @param aplicarMutacao true grava o novo saldo de divida sindical (rodaFolha);
+     *                       false apenas simula (totalFolha, que e so uma previa)
+     */
+    public final LinhaFolha calcularLinhaFolha(LocalDate data, boolean aplicarMutacao) {
+        LocalDate inicio = agenda.inicioDoPeriodo(data);
+        double[] parcelas = calcularParcelas(inicio, data);
+        double bruto = parcelas[parcelas.length - 1];
+        double descontos = sindicato.calcularDesconto(inicio, data, agenda.diasNoPeriodo(data), bruto, aplicarMutacao);
+        return new LinhaFolha(parcelas, descontos);
+    }
 
     /**
      * Lancamento de cartao de ponto so faz sentido para horistas; a implementacao
@@ -144,6 +187,7 @@ public abstract class Empregado implements Serializable{
      * uma nova instancia da subclasse correta e criada, e esse metodo garante que ela
      * nao perca os dados comuns que o empregado antigo ja tinha.
      */
+    // Obs.: a agenda NAO e copiada; o novo tipo comeca com a agenda padrao do seu tipo.
     public void copiarEstadoComumDe(Empregado outro) {
         // Copia independente: o novo empregado nao pode compartilhar a filiacao
         // (divida e lista de taxas) com o antigo.
