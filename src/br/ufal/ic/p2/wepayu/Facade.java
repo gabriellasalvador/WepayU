@@ -17,7 +17,6 @@ import br.ufal.ic.p2.wepayu.models.ResultadoVenda;
 import br.ufal.ic.p2.wepayu.models.TaxaServico;
 import br.ufal.ic.p2.wepayu.models.pagamento.Banco;
 import br.ufal.ic.p2.wepayu.models.pagamento.FabricaMetodoPagamento;
-import br.ufal.ic.p2.wepayu.models.sindicato.Filiado;
 import br.ufal.ic.p2.wepayu.models.sindicato.NaoFiliado;
 import br.ufal.ic.p2.wepayu.repository.RepositorioEmpregados;
 import br.ufal.ic.p2.wepayu.service.ArmazenamentoDeEstado;
@@ -381,10 +380,9 @@ public class Facade {
     }
 
     /**
-     * Troca o tipo de um empregado, criando pela fabrica (TipoEmpregado) uma nova
-     * instancia da classe correta (mantendo o mesmo id) e copiando para ela o estado
-     * comum do empregado antigo (nome, endereco, sindicalizacao, forma de pagamento,
-     * etc). Permite opcionalmente definir salario/comissao no momento da troca.
+     * Troca o tipo de um empregado. A Facade so converte os textos de salario e comissao
+     * (opcionais, informados junto com a troca); quem cria o novo empregado e copia o
+     * estado do antigo (sindicalizacao, forma de pagamento) e o proprio TipoEmpregado.
      */
     private void trocarTipo(Empregado antigo, String novoTipo, String novoSalario, String novaComissao) throws ValidacaoException {
         TipoEmpregado tipo = TipoEmpregado.porNome(novoTipo);
@@ -398,9 +396,7 @@ public class Facade {
             comissaoFinal = converterParaDouble(novaComissao, ComissaoNaoNumericaException::new);
         }
 
-        Empregado novo = tipo.criar(antigo.getId(), antigo.getNome(), antigo.getEndereco(), salarioFinal, comissaoFinal);
-        novo.copiarEstadoComumDe(antigo);
-        repositorio.salvar(novo);
+        repositorio.salvar(tipo.converter(antigo, salarioFinal, comissaoFinal));
     }
 
     /**
@@ -483,13 +479,11 @@ public class Facade {
         Empregado empregado = buscarEmpregado(emp);
 
         exigirPreenchido(idSindicato, IdentificacaoSindicatoNulaException::new);
-        if (repositorio.idSindicatoEmUso(idSindicato, empregado)) throw new IdentificacaoSindicatoDuplicadaException();
-
         exigirPreenchido(taxaSindical, TaxaSindicalNulaException::new);
         double taxaConvertida = converterParaDouble(taxaSindical, TaxaSindicalNaoNumericaException::new);
         if (taxaConvertida < 0) throw new TaxaSindicalNegativaException();
 
-        empregado.setSindicato(new Filiado(idSindicato, taxaConvertida));
+        repositorio.filiar(empregado, idSindicato, taxaConvertida);
         gerenciador.registrarComando(fotoAntes);
     }
 

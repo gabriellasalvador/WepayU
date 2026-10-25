@@ -1,6 +1,8 @@
 package br.ufal.ic.p2.wepayu.repository;
 
+import br.ufal.ic.p2.wepayu.excecoes.sindicato.IdentificacaoSindicatoDuplicadaException;
 import br.ufal.ic.p2.wepayu.models.Empregado;
+import br.ufal.ic.p2.wepayu.models.sindicato.Filiado;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -105,11 +107,19 @@ public final class RepositorioEmpregados {
     }
 
     /**
-     * Informa se o id de sindicato ja pertence a OUTRO empregado sindicalizado (o
-     * empregado "exceto" e ignorado, para poder reaplicar o proprio id a ele mesmo).
-     * O id de sindicato precisa ser unico entre os empregados.
+     * Filia o empregado ao sindicato com o id e a taxa informados. O id de sindicato
+     * precisa ser unico entre os empregados; se ja pertencer a OUTRO empregado, lanca
+     * IdentificacaoSindicatoDuplicadaException (o proprio empregado pode reaplicar o
+     * seu id). Como o repositorio enxerga todos os empregados, a regra mora aqui.
      */
-    public boolean idSindicatoEmUso(String idSindicato, Empregado exceto) {
+    public void filiar(Empregado empregado, String idSindicato, double taxaSindical)
+            throws IdentificacaoSindicatoDuplicadaException {
+        if (idSindicatoEmUso(idSindicato, empregado)) throw new IdentificacaoSindicatoDuplicadaException();
+        empregado.setSindicato(new Filiado(idSindicato, taxaSindical));
+    }
+
+    /** Informa se o id de sindicato ja pertence a OUTRO empregado sindicalizado. */
+    private boolean idSindicatoEmUso(String idSindicato, Empregado exceto) {
         for (Empregado outro : empregados.values()) {
             if (outro != exceto && outro.getSindicato().temIdSindicato(idSindicato)) {
                 return true;

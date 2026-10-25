@@ -52,6 +52,18 @@ public enum TipoEmpregado {
      */
     public abstract Empregado criar(String id, String nome, String endereco, double salario, double comissao);
 
+    /**
+     * Converte um empregado para este tipo: cria pela fabrica uma nova instancia (mantendo
+     * id, nome e endereco) com o salario e a comissao informados e copia para ela o estado
+     * comum do empregado antigo (sindicalizacao e forma de pagamento). O empregado antigo
+     * nao e alterado; quem chama e responsavel por guardar o novo no lugar dele.
+     */
+    public Empregado converter(Empregado antigo, double novoSalario, double novaComissao) {
+        Empregado novo = criar(antigo.getId(), antigo.getNome(), antigo.getEndereco(), novoSalario, novaComissao);
+        novo.copiarEstadoComumDe(antigo);
+        return novo;
+    }
+
     /** Nome do tipo como aparece nos comandos e no atributo "tipo" ("horista", "assalariado", "comissionado"). */
     public String getNome() {
         return nome;
