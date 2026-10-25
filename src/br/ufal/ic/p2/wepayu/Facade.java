@@ -19,20 +19,19 @@ import br.ufal.ic.p2.wepayu.models.EmpregadoComissionado;
 import br.ufal.ic.p2.wepayu.models.EmpregadoHorista;
 import br.ufal.ic.p2.wepayu.models.ResultadoVenda;
 import br.ufal.ic.p2.wepayu.models.TaxaServico;
-import br.ufal.ic.p2.wepayu.models.folha.CategoriaFolha;
 import br.ufal.ic.p2.wepayu.models.pagamento.Banco;
 import br.ufal.ic.p2.wepayu.models.pagamento.FabricaMetodoPagamento;
 import br.ufal.ic.p2.wepayu.models.sindicato.Filiado;
 import br.ufal.ic.p2.wepayu.models.sindicato.NaoFiliado;
 import br.ufal.ic.p2.wepayu.repository.RepositorioEmpregados;
-import br.ufal.ic.p2.wepayu.util.Dinheiro;
+import br.ufal.ic.p2.wepayu.service.FolhaDePagamento;
+import br.ufal.ic.p2.wepayu.util.Formatacao;
 
 
 import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.time.format.DateTimeFormatter;
 import java.io.PrintWriter;
 import java.io.FileOutputStream;
 import java.io.OutputStreamWriter;
@@ -66,6 +65,8 @@ public class Facade {
     // Repositorio unico (Singleton) onde ficam os empregados e o contador de ids;
     // a Facade nao guarda empregados por conta propria, sempre pergunta a ele.
     private final RepositorioEmpregados repositorio = RepositorioEmpregados.getInstancia();
+    // Servico que calcula a folha de pagamento e monta o relatorio.
+    private final FolhaDePagamento folha = new FolhaDePagamento(repositorio);
     // Pilhas de "fotos" (snapshots serializados) do estado do sistema, usadas pelo undo/redo (US8).
     // Cada comando que muda o estado empilha em pilhaUndo a foto de ANTES de executar.
     private Deque<byte[]> pilhaUndo = new ArrayDeque<>();
@@ -240,10 +241,10 @@ public class Facade {
             case "nome": return empregado.getNome();
             case "endereco": return empregado.getEndereco();
             case "tipo": return empregado.getTipo().getNome();
-            case "salario": return formataValor(empregado.getSalario());
+            case "salario": return Formatacao.valor(empregado.getSalario());
             // Comissao: quem nao e comissionado lanca EmpregadoNaoEhComissionadoException sozinho.
             case "comissao":
-                return formataValor(empregado.getComissao());
+                return Formatacao.valor(empregado.getComissao());
             case "sindicalizado": return String.valueOf(empregado.getSindicato().isFiliado());
             case "metodoPagamento":
                 return empregado.getMetodoPagamento().getNome();
@@ -260,7 +261,7 @@ public class Facade {
             case "idSindicato":
                 return empregado.getSindicato().getIdSindicato();
             case "taxaSindical":
-                return formataValor(empregado.getSindicato().getTaxaSindical());
+                return Formatacao.valor(empregado.getSindicato().getTaxaSindical());
             default: throw new AtributoNaoExisteException();
         }
     }
@@ -359,7 +360,7 @@ public class Facade {
                 total += Math.min(cartao.getHoras(), 8);
             }
         }
-        return formataHoras(total);
+        return Formatacao.horas(total);
     }
 
     /**
@@ -384,7 +385,7 @@ public class Facade {
                 total += Math.max(0, cartao.getHoras() - 8);
             }
         }
-        return formataHoras(total);
+        return Formatacao.horas(total);
     }
 
     /**
@@ -430,31 +431,7 @@ public class Facade {
                 total += venda.getValor();
             }
         }
-        return formataValor(total);
-    }
-
-    /**
-     * Formata um double como valor monetario no padrao brasileiro (duas casas decimais,
-     * separador decimal com virgula). Ex.: 1234.5 -> "1234,50".
-     */
-    private String formataValor(double valor) {
-        return String.format(java.util.Locale.US, "%.2f", valor).replace(".", ",");
-    }
-
-    /**
-     * Formata um total de horas: se for um numero inteiro, exibe sem casas decimais;
-     * caso contrario, exibe com uma ou duas casas decimais (removendo zero final desnecessario),
-     * usando virgula como separador decimal.
-     */
-    private String formataHoras(double valor) {
-        if (valor == Math.floor(valor)) {
-            return String.valueOf((int) valor);
-        }
-        String formatado = String.format(java.util.Locale.US, "%.2f", valor).replace(".", ",");
-        if (formatado.endsWith("0")) {
-            formatado = formatado.substring(0, formatado.length() - 1);
-        }
-        return formatado;
+        return Formatacao.valor(total);
     }
 
     /**
@@ -554,7 +531,7 @@ public class Facade {
                 total += taxa.getValor();
             }
         }
-        return formataValor(total);
+        return Formatacao.valor(total);
     }
 
     /**
@@ -708,134 +685,6 @@ public class Facade {
     private Map<LocalDate, String> folhasGeradas = new HashMap<>();
 
     /**
-     * Estrutura simples para carregar, ao mesmo tempo, o texto do relatorio da folha
-     * e o valor total pago nela.
-     */
-    private static class ResultadoFolha {
-        String relatorio;
-        double total;
-    }
-
-    /**
-     * Monta uma string repetindo o caractere c, n vezes. Usado para desenhar as
-     * linhas de borda (=====) do relatorio de folha.
-     */
-    private String repete(char c, int n) {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < n; i++) sb.append(c);
-        return sb.toString();
-    }
-
-    /**
-     * Linha de borda "cheia" (127 caracteres de '=') usada no topo/rodape de cada
-     * secao do relatorio de folha.
-     */
-    private String bordaTopo() {
-        return repete('=', 127);
-    }
-
-    /**
-     * Linha de borda com o titulo da categoria centralizado dentro de '=' (ex.: HORISTAS),
-     * completando ate 127 caracteres.
-     */
-    private String bordaCategoria(String titulo) {
-        String meio = repete('=', 21) + " " + titulo + " ";
-        return meio + repete('=', 127 - meio.length());
-    }
-
-    /**
-     * Linha de cabecalho da tabela de uma secao: nomes das colunas alinhados a esquerda.
-     */
-    private String formatarCabecalho(CategoriaFolha categoria) {
-        StringBuilder sb = new StringBuilder(String.format("%-" + categoria.getLarguraDoNome() + "s", "Nome"));
-        for (CategoriaFolha.Coluna coluna : categoria.getColunas()) {
-            sb.append(' ').append(String.format("%-" + coluna.getLargura() + "s", coluna.getTitulo()));
-        }
-        return sb.append(" Metodo").toString();
-    }
-
-    /**
-     * Linha de '=' logo abaixo do cabecalho, com a largura de cada coluna (38 para o metodo).
-     */
-    private String formatarSeparador(CategoriaFolha categoria) {
-        StringBuilder sb = new StringBuilder(repete('=', categoria.getLarguraDoNome()));
-        for (CategoriaFolha.Coluna coluna : categoria.getColunas()) {
-            sb.append(' ').append(repete('=', coluna.getLargura()));
-        }
-        return sb.append(' ').append(repete('=', 38)).toString();
-    }
-
-    /**
-     * Formata os valores de uma linha (ou do total) da tabela: o texto inicial alinhado
-     * a esquerda na coluna de nomes e cada valor alinhado a direita na sua coluna.
-     * Valores de colunas de horas usam formataHoras; os demais, formataValor.
-     */
-    private String formatarValores(CategoriaFolha categoria, String texto, double[] valores) {
-        StringBuilder sb = new StringBuilder(String.format("%-" + categoria.getLarguraDoNome() + "s", texto));
-        for (int i = 0; i < valores.length; i++) {
-            CategoriaFolha.Coluna coluna = categoria.getColunas().get(i);
-            String valor = coluna.isEmHoras() ? formataHoras(valores[i]) : formataValor(valores[i]);
-            sb.append(' ').append(String.format("%" + coluna.getLargura() + "s", valor));
-        }
-        return sb.toString();
-    }
-
-    /**
-     * Calcula (e formata como texto) a folha de pagamento completa referente a uma data.
-     * Para cada secao (CategoriaFolha), lista os empregados dela em ordem alfabetica e,
-     * para os que recebem naquela data segundo a propria agenda de pagamento, pede ao
-     * empregado o calculo da sua linha (Empregado.calcularLinhaFolha). A Facade so
-     * monta a tabela e os totais; nao sabe como cada tipo calcula o salario.
-     * aplicarMutacao controla se o desconto sindical calculado deve ser persistido
-     * (rodaFolha) ou apenas simulado (totalFolha).
-     */
-    private ResultadoFolha calcularFolha(LocalDate data, boolean aplicarMutacao) {
-        ResultadoFolha resultado = new ResultadoFolha();
-        StringBuilder sb = new StringBuilder();
-
-        String titulo = "FOLHA DE PAGAMENTO DO DIA " + data.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
-        sb.append(titulo).append("\r\n");
-        sb.append(repete('=', titulo.length())).append("\r\n");
-        sb.append("\r\n");
-
-        double totalGeral = 0;
-
-        for (CategoriaFolha categoria : CategoriaFolha.values()) {
-            List<Empregado> membros = new ArrayList<>();
-            for (Empregado e : repositorio.listar()) if (e.getCategoria() == categoria) membros.add(e);
-            membros.sort(Comparator.comparing(Empregado::getNome));
-
-            sb.append(bordaTopo()).append("\r\n");
-            sb.append(bordaCategoria(categoria.getTitulo())).append("\r\n");
-            sb.append(bordaTopo()).append("\r\n");
-            sb.append(formatarCabecalho(categoria)).append("\r\n");
-            sb.append(formatarSeparador(categoria)).append("\r\n");
-
-            double[] totais = new double[categoria.getColunas().size()];
-            for (Empregado e : membros) {
-                if (!e.getAgenda().isDiaDePagamento(data)) continue;
-
-                double[] valores = e.calcularLinhaFolha(data, aplicarMutacao).getValores();
-                sb.append(formatarValores(categoria, e.getNome(), valores))
-                        .append(' ').append(e.getMetodoPagamento().descreverParaFolha(e.getEndereco()))
-                        .append("\r\n");
-
-                for (int i = 0; i < totais.length; i++) totais[i] += valores[i];
-            }
-            sb.append("\r\n");
-            sb.append(formatarValores(categoria, categoria.getRotuloDoTotal(), totais)).append("\r\n");
-            sb.append("\r\n");
-            totalGeral += totais[categoria.getIndiceDoBruto()];
-        }
-
-        sb.append("TOTAL FOLHA: ").append(formataValor(Dinheiro.truncar(totalGeral))).append("\r\n");
-
-        resultado.relatorio = sb.toString();
-        resultado.total = Dinheiro.truncar(totalGeral);
-        return resultado;
-    }
-
-    /**
      * Retorna apenas o valor total da folha para uma data, sem gerar o relatorio
      * em arquivo e sem persistir descontos sindicais (calculo "de previa").
      */
@@ -843,7 +692,7 @@ public class Facade {
         verificarSistemaAtivo();
         LocalDate dataConvertida;
         try { dataConvertida = parseData(data); } catch (Exception e) { throw new DataInvalidaException(); }
-        return formataValor(calcularFolha(dataConvertida, false).total);
+        return Formatacao.valor(folha.calcular(dataConvertida, false).getTotal());
     }
 
     /**
@@ -858,7 +707,7 @@ public class Facade {
         LocalDate dataConvertida;
         try { dataConvertida = parseData(data); } catch (Exception e) { throw new DataInvalidaException(); }
 
-        String relatorio = folhasGeradas.computeIfAbsent(dataConvertida, d -> calcularFolha(d, true).relatorio);
+        String relatorio = folhasGeradas.computeIfAbsent(dataConvertida, d -> folha.calcular(d, true).getRelatorio());
 
         try (PrintWriter out = new PrintWriter(new OutputStreamWriter(new FileOutputStream(saida), "UTF-8"))) {
             out.print(relatorio);
