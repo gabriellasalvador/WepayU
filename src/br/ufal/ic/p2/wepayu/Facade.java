@@ -24,6 +24,7 @@ import br.ufal.ic.p2.wepayu.models.pagamento.Banco;
 import br.ufal.ic.p2.wepayu.models.pagamento.FabricaMetodoPagamento;
 import br.ufal.ic.p2.wepayu.models.sindicato.Filiado;
 import br.ufal.ic.p2.wepayu.models.sindicato.NaoFiliado;
+import br.ufal.ic.p2.wepayu.repository.RepositorioEmpregados;
 import br.ufal.ic.p2.wepayu.util.Dinheiro;
 
 
@@ -62,10 +63,9 @@ import java.util.function.Supplier;
  */
 public class Facade {
 
-    // Repositorio principal: mapeia id do empregado -> objeto Empregado.
-    private Map<String, Empregado> empregados = new HashMap<>();
-    // Contador usado para gerar os proximos ids de empregado (1, 2, 3, ...).
-    private int proximoId = 1;
+    // Repositorio unico (Singleton) onde ficam os empregados e o contador de ids;
+    // a Facade nao guarda empregados por conta propria, sempre pergunta a ele.
+    private final RepositorioEmpregados repositorio = RepositorioEmpregados.getInstancia();
     // Pilhas de "fotos" (snapshots serializados) do estado do sistema, usadas pelo undo/redo (US8).
     // Cada comando que muda o estado empilha em pilhaUndo a foto de ANTES de executar.
     private Deque<byte[]> pilhaUndo = new ArrayDeque<>();
@@ -99,9 +99,8 @@ public class Facade {
     public void zerarSistema() throws ValidacaoException {
         verificarSistemaAtivo();
         byte[] fotoAntes = tirarFoto();
-        empregados.clear();
+        repositorio.zerar();
         folhasGeradas.clear();
-        proximoId = 1;
         registrarComando(fotoAntes);
     }
 
@@ -178,8 +177,8 @@ public class Facade {
      */
     private String cadastrar(TipoEmpregado tipo, String nome, String endereco,
                              double salario, double comissao, byte[] fotoAntes) {
-        String id = String.valueOf(proximoId++);
-        empregados.put(id, tipo.criar(id, nome, endereco, salario, comissao));
+        String id = repositorio.gerarProximoId();
+        repositorio.salvar(tipo.criar(id, nome, endereco, salario, comissao));
         registrarComando(fotoAntes);
         return id;
     }
@@ -223,10 +222,9 @@ public class Facade {
     public void removerEmpregado(String emp) throws ValidacaoException {
         verificarSistemaAtivo();
         byte[] fotoAntes = tirarFoto();
-        if (emp == null || emp.isEmpty()) throw new IdentificacaoNulaException();
-        if (!empregados.containsKey(emp)) throw new EmpregadoNaoExisteException();
+        Empregado empregado = buscarEmpregado(emp);
         registrarComando(fotoAntes);
-        empregados.remove(emp);
+        repositorio.remover(empregado.getId());
     }
 
     /**
@@ -236,9 +234,7 @@ public class Facade {
      */
     public String getAtributoEmpregado(String emp, String atributo) throws ValidacaoException {
         verificarSistemaAtivo();
-        if (emp == null || emp.isEmpty()) throw new IdentificacaoNulaException();
-        Empregado empregado = empregados.get(emp);
-        if (empregado == null) throw new EmpregadoNaoExisteException();
+        Empregado empregado = buscarEmpregado(emp);
 
         switch (atributo) {
             case "nome": return empregado.getNome();
@@ -274,7 +270,7 @@ public class Facade {
      */
     public int getNumeroDeEmpregados() throws ValidacaoException {
         verificarSistemaAtivo();
-        return empregados.size();
+        return repositorio.quantidade();
     }
 
     /**
@@ -297,9 +293,7 @@ public class Facade {
     public void lancaCartao(String emp, String data, String horas) throws ValidacaoException {
         verificarSistemaAtivo();
         byte[] fotoAntes = tirarFoto();
-        if (emp == null || emp.isEmpty()) throw new IdentificacaoNulaException();
-        Empregado empregado = empregados.get(emp);
-        if (empregado == null) throw new EmpregadoNaoExisteException();
+        Empregado empregado = buscarEmpregado(emp);
 
         LocalDate dataConvertida;
         try {
@@ -329,7 +323,7 @@ public class Facade {
         }
 
         List<Empregado> encontrados = new ArrayList<>();
-        for (Empregado e : empregados.values()) {
+        for (Empregado e : repositorio.listar()) {
             if (e.getNome().contains(nome)) {
                 encontrados.add(e);
             }
@@ -349,9 +343,7 @@ public class Facade {
      */
     public String getHorasNormaisTrabalhadas(String emp, String dataInicial, String dataFinal) throws ValidacaoException {
         verificarSistemaAtivo();
-        if (emp == null || emp.isEmpty()) throw new IdentificacaoNulaException();
-        Empregado empregado = empregados.get(emp);
-        if (empregado == null) throw new EmpregadoNaoExisteException();
+        Empregado empregado = buscarEmpregado(emp);
         List<CartaoDePonto> cartoes = empregado.getCartoes();
 
         LocalDate inicio;
@@ -376,9 +368,7 @@ public class Facade {
      */
     public String getHorasExtrasTrabalhadas(String emp, String dataInicial, String dataFinal) throws ValidacaoException {
         verificarSistemaAtivo();
-        if (emp == null || emp.isEmpty()) throw new IdentificacaoNulaException();
-        Empregado empregado = empregados.get(emp);
-        if (empregado == null) throw new EmpregadoNaoExisteException();
+        Empregado empregado = buscarEmpregado(emp);
         List<CartaoDePonto> cartoes = empregado.getCartoes();
 
         LocalDate inicio;
@@ -403,9 +393,7 @@ public class Facade {
     public void lancaVenda(String emp, String data, String valor) throws ValidacaoException {
         verificarSistemaAtivo();
         byte[] fotoAntes = tirarFoto();
-        if (emp == null || emp.isEmpty()) throw new IdentificacaoNulaException();
-        Empregado empregado = empregados.get(emp);
-        if (empregado == null) throw new EmpregadoNaoExisteException();
+        Empregado empregado = buscarEmpregado(emp);
 
         LocalDate dataConvertida;
         try {
@@ -426,9 +414,7 @@ public class Facade {
      */
     public String getVendasRealizadas(String emp, String dataInicial, String dataFinal) throws ValidacaoException {
         verificarSistemaAtivo();
-        if (emp == null || emp.isEmpty()) throw new IdentificacaoNulaException();
-        Empregado empregado = empregados.get(emp);
-        if (empregado == null) throw new EmpregadoNaoExisteException();
+        Empregado empregado = buscarEmpregado(emp);
         List<ResultadoVenda> vendas = empregado.getVendas();
 
         LocalDate inicio;
@@ -477,7 +463,7 @@ public class Facade {
      * pelo id de sindicato e nao pelo id do empregado.
      */
     private Empregado buscarPorIdSindicato(String membro) throws ValidacaoException {
-        for (Empregado empregado : empregados.values()) {
+        for (Empregado empregado : repositorio.listar()) {
             if (empregado.getSindicato().isFiliado() && membro.equals(empregado.getSindicato().getIdSindicato())) {
                 return empregado;
             }
@@ -487,7 +473,7 @@ public class Facade {
 
     /**
      * Serializa (via ObjectOutputStream) uma "foto" completa do estado mutavel do sistema:
-     * o mapa de empregados, as folhas ja geradas e o proximo id disponivel.
+     * os empregados e o proximo id (vindos do repositorio) e as folhas ja geradas.
      * E a base do mecanismo de undo/redo/persistencia: cada snapshot vira um byte[]
      * que pode ser empilhado e restaurado depois.
      */
@@ -495,9 +481,9 @@ public class Facade {
         ByteArrayOutputStream bufferDeBytes = new ByteArrayOutputStream();
         // try-with-resources: o stream e fechado (e descarregado) mesmo se algo falhar no meio.
         try (ObjectOutputStream escritorDeObjetos = new ObjectOutputStream(bufferDeBytes)) {
-            escritorDeObjetos.writeObject(empregados);
+            escritorDeObjetos.writeObject(repositorio.copiarEmpregados());
             escritorDeObjetos.writeObject(folhasGeradas);
-            escritorDeObjetos.writeInt(proximoId);
+            escritorDeObjetos.writeInt(repositorio.getProximoId());
         } catch (IOException e) {
             throw new RuntimeException("Erro ao tirar foto do sistema: " + e.getMessage(), e);
         }
@@ -506,15 +492,17 @@ public class Facade {
 
     /**
      * Desserializa uma "foto" gerada por tirarFoto() e substitui o estado atual
-     * (empregados, folhasGeradas, proximoId) pelo estado salvo naquele snapshot.
+     * (repositorio de empregados e folhasGeradas) pelo estado salvo naquele snapshot.
      * Usado por undo, redo e pela restauracao do estado ao iniciar a Facade.
      */
     @SuppressWarnings("unchecked")
     private void restaurarFoto(byte[] foto) {
         try (ObjectInputStream leitorDeObjetos = new ObjectInputStream(new ByteArrayInputStream(foto))) {
-            empregados = (Map<String, Empregado>) leitorDeObjetos.readObject();
+            Map<String, Empregado> empregadosRestaurados = (Map<String, Empregado>) leitorDeObjetos.readObject();
             folhasGeradas = (Map<LocalDate, String>) leitorDeObjetos.readObject();
-            proximoId = leitorDeObjetos.readInt();
+            int proximoIdRestaurado = leitorDeObjetos.readInt();
+            // Troca so o conteudo do repositorio unico; o objeto repositorio continua o mesmo.
+            repositorio.restaurar(empregadosRestaurados, proximoIdRestaurado);
         } catch (IOException | ClassNotFoundException e) {
             throw new RuntimeException("Erro ao restaurar foto do sistema: " + e.getMessage(), e);
         }
@@ -549,9 +537,7 @@ public class Facade {
      */
     public String getTaxasServico(String emp, String dataInicial, String dataFinal) throws ValidacaoException {
         verificarSistemaAtivo();
-        if (emp == null || emp.isEmpty()) throw new IdentificacaoNulaException();
-        Empregado empregado = empregados.get(emp);
-        if (empregado == null) throw new EmpregadoNaoExisteException();
+        Empregado empregado = buscarEmpregado(emp);
         // Lanca EmpregadoNaoEhSindicalizadoException se nao for filiado (antes de validar as datas).
         List<TaxaServico> taxas = empregado.getSindicato().getTaxasServico();
 
@@ -577,9 +563,7 @@ public class Facade {
      */
     private Empregado buscarEmpregado(String emp) throws ValidacaoException {
         if (emp == null || emp.isEmpty()) throw new IdentificacaoNulaException();
-        Empregado empregado = empregados.get(emp);
-        if (empregado == null) throw new EmpregadoNaoExisteException();
-        return empregado;
+        return repositorio.buscarPorId(emp).orElseThrow(EmpregadoNaoExisteException::new);
     }
 
     /**
@@ -602,7 +586,7 @@ public class Facade {
 
         Empregado novo = tipo.criar(antigo.getId(), antigo.getNome(), antigo.getEndereco(), salarioFinal, comissaoFinal);
         novo.copiarEstadoComumDe(antigo);
-        empregados.put(antigo.getId(), novo);
+        repositorio.salvar(novo);
     }
 
     /**
@@ -686,7 +670,7 @@ public class Facade {
 
         if (idSindicato == null || idSindicato.isEmpty()) throw new IdentificacaoSindicatoNulaException();
 
-        for (Empregado outro : empregados.values()) {
+        for (Empregado outro : repositorio.listar()) {
             if (outro != empregado && outro.getSindicato().isFiliado() && idSindicato.equals(outro.getSindicato().getIdSindicato())) {
                 throw new IdentificacaoSindicatoDuplicadaException();
             }
@@ -818,7 +802,7 @@ public class Facade {
 
         for (CategoriaFolha categoria : CategoriaFolha.values()) {
             List<Empregado> membros = new ArrayList<>();
-            for (Empregado e : empregados.values()) if (e.getCategoria() == categoria) membros.add(e);
+            for (Empregado e : repositorio.listar()) if (e.getCategoria() == categoria) membros.add(e);
             membros.sort(Comparator.comparing(Empregado::getNome));
 
             sb.append(bordaTopo()).append("\r\n");
