@@ -79,6 +79,17 @@ public class Facade {
     }
 
     /**
+     * Cria uma agenda de pagamento personalizada (ex.: "mensal 10", "semanal 3 2") que
+     * passa a poder ser atribuida aos empregados. Quem valida e monta a agenda e o catalogo.
+     */
+    public void criarAgendaDePagamentos(String descricao) throws ValidacaoException {
+        verificarSistemaAtivo();
+        EstadoDoSistema fotoAntes = gerenciador.tirarFoto();
+        agendas.criar(descricao);
+        gerenciador.registrarComando(fotoAntes);
+    }
+
+    /**
      * Reseta completamente o sistema (empregados, folhas geradas e contador de id),
      * registrando o estado anterior na pilha de undo.
      */

@@ -1,6 +1,8 @@
 package br.ufal.ic.p2.wepayu.models.agenda;
 
+import br.ufal.ic.p2.wepayu.excecoes.agenda.AgendaJaExisteException;
 import br.ufal.ic.p2.wepayu.excecoes.agenda.AgendaNaoDisponivelException;
+import br.ufal.ic.p2.wepayu.excecoes.agenda.DescricaoAgendaInvalidaException;
 
 import java.time.DayOfWeek;
 import java.util.LinkedHashMap;
@@ -40,6 +42,20 @@ public class CatalogoDeAgendas {
         AgendaPagamento agenda = agendas.get(descricao);
         if (agenda == null) throw new AgendaNaoDisponivelException();
         return agenda;
+    }
+
+    /**
+     * Cria uma agenda nova a partir da descricao (ver FabricaAgenda) e a inclui no catalogo,
+     * deixando-a disponivel para os empregados.
+     *
+     * @throws DescricaoAgendaInvalidaException se a descricao nao seguir nenhum formato aceito
+     * @throws AgendaJaExisteException          se ja houver uma agenda igual (inclusive as padrao)
+     */
+    public void criar(String descricao) throws DescricaoAgendaInvalidaException, AgendaJaExisteException {
+        AgendaPagamento nova = FabricaAgenda.criar(descricao);
+        // A chave e a descricao padronizada da agenda ("semanal 1 5" e "semanal 5" sao a mesma).
+        if (agendas.containsKey(nova.getDescricao())) throw new AgendaJaExisteException();
+        incluir(nova);
     }
 
     private void incluir(AgendaPagamento agenda) {
