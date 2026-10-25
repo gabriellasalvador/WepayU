@@ -318,8 +318,8 @@ public class Facade {
     }
 
     /**
-     * Soma as horas extras (acima de 8h por cartao) trabalhadas por um empregado
-     * dentro do periodo [dataInicial, dataFinal).
+     * Soma as horas extras trabalhadas por um horista dentro do periodo
+     * [dataInicial, dataFinal). Quem sabe o que e hora extra e o cartao de ponto.
      */
     public String getHorasExtrasTrabalhadas(String emp, String dataInicial, String dataFinal) throws ValidacaoException {
         verificarSistemaAtivo();
@@ -399,16 +399,17 @@ public class Facade {
     private void trocarTipo(Empregado antigo, String novoTipo, String novoSalario, String novaComissao) throws ValidacaoException {
         TipoEmpregado tipo = TipoEmpregado.porNome(novoTipo);
 
-        double salarioFinal = antigo.getSalario();
+        // So converte o que veio no comando; o que nao veio fica null e o tipo decide o padrao.
+        Double salario = null;
         if (novoSalario != null) {
-            salarioFinal = converterParaDouble(novoSalario, SalarioNaoNumericoException::new);
+            salario = converterParaDouble(novoSalario, SalarioNaoNumericoException::new);
         }
-        double comissaoFinal = 0;
+        Double comissao = null;
         if (novaComissao != null) {
-            comissaoFinal = converterParaDouble(novaComissao, ComissaoNaoNumericaException::new);
+            comissao = converterParaDouble(novaComissao, ComissaoNaoNumericaException::new);
         }
 
-        repositorio.salvar(tipo.converter(antigo, salarioFinal, comissaoFinal));
+        repositorio.salvar(tipo.converter(antigo, salario, comissao));
     }
 
     /**

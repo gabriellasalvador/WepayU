@@ -61,13 +61,18 @@ public enum TipoEmpregado {
 
     /**
      * Converte um empregado para este tipo: cria pela fabrica uma nova instancia (mantendo
-     * id, nome e endereco) com o salario e a comissao informados e copia para ela o estado
-     * comum do empregado antigo (sindicalizacao e forma de pagamento). O empregado antigo
-     * nao e alterado; quem chama e responsavel por guardar o novo no lugar dele.
+     * id, nome e endereco) e copia para ela o estado comum do empregado antigo
+     * (sindicalizacao e forma de pagamento). O empregado antigo nao e alterado; quem chama
+     * e responsavel por guardar o novo no lugar dele.
+     *
+     * O salario e a comissao sao opcionais (null = nao informado): sem novo salario, o
+     * empregado mantem o salario que tinha; sem nova comissao, ela comeca em zero.
      */
-    public Empregado converter(Empregado antigo, double novoSalario, double novaComissao)
+    public Empregado converter(Empregado antigo, Double novoSalario, Double novaComissao)
             throws SalarioNegativoException, ComissaoNegativaException {
-        Empregado novo = criar(antigo.getId(), antigo.getNome(), antigo.getEndereco(), novoSalario, novaComissao);
+        double salario = (novoSalario != null) ? novoSalario : antigo.getSalario();
+        double comissao = (novaComissao != null) ? novaComissao : 0;
+        Empregado novo = criar(antigo.getId(), antigo.getNome(), antigo.getEndereco(), salario, comissao);
         novo.copiarEstadoComumDe(antigo);
         return novo;
     }
