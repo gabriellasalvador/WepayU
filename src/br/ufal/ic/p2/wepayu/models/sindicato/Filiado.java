@@ -1,11 +1,11 @@
 package br.ufal.ic.p2.wepayu.models.sindicato;
 
+import br.ufal.ic.p2.wepayu.models.Periodo;
 import br.ufal.ic.p2.wepayu.models.TaxaServico;
 import br.ufal.ic.p2.wepayu.util.Dinheiro;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 /**
@@ -62,8 +62,12 @@ public class Filiado implements FiliacaoSindical {
     }
 
     @Override
-    public List<TaxaServico> getTaxasServico() {
-        return Collections.unmodifiableList(taxasServico);
+    public double totalTaxasEm(Periodo periodo) {
+        double total = 0;
+        for (TaxaServico taxa : taxasServico) {
+            if (periodo.contem(taxa.getData())) total += taxa.getValor();
+        }
+        return total;
     }
 
     @Override

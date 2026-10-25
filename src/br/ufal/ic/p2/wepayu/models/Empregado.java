@@ -10,7 +10,6 @@ import br.ufal.ic.p2.wepayu.models.sindicato.NaoFiliado;
 import br.ufal.ic.p2.wepayu.models.pagamento.EmMaos;
 import br.ufal.ic.p2.wepayu.models.pagamento.MetodoPagamento;
 import java.time.LocalDate;
-import java.util.List;
 import java.util.Objects;
 import java.io.Serializable;
 
@@ -102,9 +101,17 @@ public abstract class Empregado implements Serializable{
     }
 
     /**
-     * Idem addCartao: obter a lista de cartoes so e valido para horistas.
+     * Total de horas normais trabalhadas dentro do periodo. Como o cartao de ponto, so
+     * faz sentido para horistas; aqui lanca excecao e EmpregadoHorista sobrescreve.
      */
-    public List<CartaoDePonto> getCartoes() throws EmpregadoNaoEhHoristaException {
+    public double horasNormaisEm(Periodo periodo) throws EmpregadoNaoEhHoristaException {
+        throw new EmpregadoNaoEhHoristaException();
+    }
+
+    /**
+     * Total de horas extras trabalhadas dentro do periodo (so para horistas).
+     */
+    public double horasExtrasEm(Periodo periodo) throws EmpregadoNaoEhHoristaException {
         throw new EmpregadoNaoEhHoristaException();
     }
 
@@ -128,7 +135,11 @@ public abstract class Empregado implements Serializable{
         throw new EmpregadoNaoEhComissionadoException();
     }
 
-    public List<ResultadoVenda> getVendas() throws EmpregadoNaoEhComissionadoException {
+    /**
+     * Valor total das vendas realizadas dentro do periodo. So existe para
+     * comissionados; EmpregadoComissionado sobrescreve este metodo.
+     */
+    public double totalVendasEm(Periodo periodo) throws EmpregadoNaoEhComissionadoException {
         throw new EmpregadoNaoEhComissionadoException();
     }
 

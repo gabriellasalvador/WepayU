@@ -1,11 +1,11 @@
 package br.ufal.ic.p2.wepayu.models.sindicato;
 
 import br.ufal.ic.p2.wepayu.excecoes.tipoempregado.EmpregadoNaoEhSindicalizadoException;
+import br.ufal.ic.p2.wepayu.models.Periodo;
 import br.ufal.ic.p2.wepayu.models.TaxaServico;
 
 import java.io.Serializable;
 import java.time.LocalDate;
-import java.util.List;
 
 /**
  * Situacao de um empregado perante o sindicato (padrao State com Null Object).
@@ -53,13 +53,14 @@ public interface FiliacaoSindical extends Serializable {
     double getTaxaSindical() throws EmpregadoNaoEhSindicalizadoException;
 
     /**
-     * Visao somente leitura das taxas de servico lancadas. Novas taxas so
-     * entram por registrarTaxaServico, para que toda mudanca de estado passe
-     * por um comando da Facade (e, portanto, entre no undo/redo).
+     * Soma das taxas de servico lancadas dentro do periodo [inicio, fim). As taxas
+     * ficam guardadas dentro do proprio objeto; novas taxas so entram por
+     * registrarTaxaServico, para que toda mudanca de estado passe por um comando
+     * da Facade (e, portanto, entre no undo/redo).
      *
      * @throws EmpregadoNaoEhSindicalizadoException se nao estiver filiado
      */
-    List<TaxaServico> getTaxasServico() throws EmpregadoNaoEhSindicalizadoException;
+    double totalTaxasEm(Periodo periodo) throws EmpregadoNaoEhSindicalizadoException;
 
     /**
      * Registra uma taxa de servico cobrada do empregado em uma data.

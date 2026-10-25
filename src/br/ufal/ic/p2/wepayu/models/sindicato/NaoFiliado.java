@@ -1,10 +1,10 @@
 package br.ufal.ic.p2.wepayu.models.sindicato;
 
 import br.ufal.ic.p2.wepayu.excecoes.tipoempregado.EmpregadoNaoEhSindicalizadoException;
+import br.ufal.ic.p2.wepayu.models.Periodo;
 import br.ufal.ic.p2.wepayu.models.TaxaServico;
 
 import java.time.LocalDate;
-import java.util.List;
 
 /**
  * Empregado que nao pertence ao sindicato. E a situacao inicial de todo
@@ -35,7 +35,7 @@ public class NaoFiliado implements FiliacaoSindical {
     }
 
     @Override
-    public List<TaxaServico> getTaxasServico() throws EmpregadoNaoEhSindicalizadoException {
+    public double totalTaxasEm(Periodo periodo) throws EmpregadoNaoEhSindicalizadoException {
         throw new EmpregadoNaoEhSindicalizadoException();
     }
 

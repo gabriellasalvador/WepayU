@@ -294,23 +294,14 @@ public class Facade {
     }
 
     /**
-     * Soma as horas normais (ate 8h por cartao) trabalhadas por um empregado
-     * dentro do periodo [dataInicial, dataFinal), usada tipicamente para horistas.
+     * Soma as horas normais trabalhadas por um horista dentro do periodo
+     * [dataInicial, dataFinal). Quem sabe o que e hora normal e o cartao de ponto.
      */
     public String getHorasNormaisTrabalhadas(String emp, String dataInicial, String dataFinal) throws ValidacaoException {
         verificarSistemaAtivo();
         Empregado empregado = buscarEmpregado(emp);
-        List<CartaoDePonto> cartoes = empregado.getCartoes();
-
         Periodo periodo = Periodo.de(dataInicial, dataFinal);
-
-        double total = 0;
-        for (CartaoDePonto cartao : cartoes) {
-            if (periodo.contem(cartao.getData())) {
-                total += Math.min(cartao.getHoras(), 8);
-            }
-        }
-        return Formatacao.horas(total);
+        return Formatacao.horas(empregado.horasNormaisEm(periodo));
     }
 
     /**
@@ -320,17 +311,8 @@ public class Facade {
     public String getHorasExtrasTrabalhadas(String emp, String dataInicial, String dataFinal) throws ValidacaoException {
         verificarSistemaAtivo();
         Empregado empregado = buscarEmpregado(emp);
-        List<CartaoDePonto> cartoes = empregado.getCartoes();
-
         Periodo periodo = Periodo.de(dataInicial, dataFinal);
-
-        double total = 0;
-        for (CartaoDePonto cartao : cartoes) {
-            if (periodo.contem(cartao.getData())) {
-                total += Math.max(0, cartao.getHoras() - 8);
-            }
-        }
-        return Formatacao.horas(total);
+        return Formatacao.horas(empregado.horasExtrasEm(periodo));
     }
 
     /**
@@ -356,17 +338,8 @@ public class Facade {
     public String getVendasRealizadas(String emp, String dataInicial, String dataFinal) throws ValidacaoException {
         verificarSistemaAtivo();
         Empregado empregado = buscarEmpregado(emp);
-        List<ResultadoVenda> vendas = empregado.getVendas();
-
         Periodo periodo = Periodo.de(dataInicial, dataFinal);
-
-        double total = 0;
-        for (ResultadoVenda venda : vendas) {
-            if (periodo.contem(venda.getData())) {
-                total += venda.getValor();
-            }
-        }
-        return Formatacao.valor(total);
+        return Formatacao.valor(empregado.totalVendasEm(periodo));
     }
 
     /**
@@ -394,18 +367,8 @@ public class Facade {
     public String getTaxasServico(String emp, String dataInicial, String dataFinal) throws ValidacaoException {
         verificarSistemaAtivo();
         Empregado empregado = buscarEmpregado(emp);
-        // Lanca EmpregadoNaoEhSindicalizadoException se nao for filiado (antes de validar as datas).
-        List<TaxaServico> taxas = empregado.getSindicato().getTaxasServico();
-
         Periodo periodo = Periodo.de(dataInicial, dataFinal);
-
-        double total = 0;
-        for (TaxaServico taxa : taxas) {
-            if (periodo.contem(taxa.getData())) {
-                total += taxa.getValor();
-            }
-        }
-        return Formatacao.valor(total);
+        return Formatacao.valor(empregado.getSindicato().totalTaxasEm(periodo));
     }
 
     /**

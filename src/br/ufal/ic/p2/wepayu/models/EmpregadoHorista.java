@@ -7,7 +7,6 @@ import br.ufal.ic.p2.wepayu.util.Dinheiro;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 /**
@@ -44,8 +43,8 @@ public class EmpregadoHorista extends Empregado {
         for (CartaoDePonto c : cartoes) {
             LocalDate d = c.getData();
             if (d.isAfter(inicioExclusive) && !d.isAfter(fimInclusive)) {
-                normais += Math.min(c.getHoras(), 8);
-                extras += Math.max(0, c.getHoras() - 8);
+                normais += c.getHorasNormais();
+                extras += c.getHorasExtras();
             }
         }
         double bruto = Dinheiro.truncar(normais * getSalario() + extras * getSalario() * 1.5);
@@ -57,12 +56,23 @@ public class EmpregadoHorista extends Empregado {
         cartoes.add(cartao);
     }
 
-    /**
-     * Devolve uma visao somente leitura dos cartoes de ponto; novos cartoes so
-     * entram por addCartao, nunca alterando a lista interna de fora da classe.
-     */
+    /** Soma das horas normais dos cartoes lancados dentro do periodo [inicio, fim). */
     @Override
-    public List<CartaoDePonto> getCartoes() {
-        return Collections.unmodifiableList(cartoes);
+    public double horasNormaisEm(Periodo periodo) {
+        double total = 0;
+        for (CartaoDePonto cartao : cartoes) {
+            if (periodo.contem(cartao.getData())) total += cartao.getHorasNormais();
+        }
+        return total;
+    }
+
+    /** Soma das horas extras dos cartoes lancados dentro do periodo [inicio, fim). */
+    @Override
+    public double horasExtrasEm(Periodo periodo) {
+        double total = 0;
+        for (CartaoDePonto cartao : cartoes) {
+            if (periodo.contem(cartao.getData())) total += cartao.getHorasExtras();
+        }
+        return total;
     }
 }

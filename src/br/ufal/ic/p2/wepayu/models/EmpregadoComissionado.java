@@ -7,7 +7,6 @@ import br.ufal.ic.p2.wepayu.util.Dinheiro;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 /**
@@ -67,12 +66,13 @@ public class EmpregadoComissionado extends Empregado {
         vendas.add(venda);
     }
 
-    /**
-     * Devolve uma visao somente leitura das vendas; novas vendas so entram por
-     * addVenda, nunca alterando a lista interna de fora da classe.
-     */
+    /** Soma do valor das vendas realizadas dentro do periodo [inicio, fim). */
     @Override
-    public List<ResultadoVenda> getVendas() {
-        return Collections.unmodifiableList(vendas);
+    public double totalVendasEm(Periodo periodo) {
+        double total = 0;
+        for (ResultadoVenda venda : vendas) {
+            if (periodo.contem(venda.getData())) total += venda.getValor();
+        }
+        return total;
     }
 }
