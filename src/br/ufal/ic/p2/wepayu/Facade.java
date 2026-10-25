@@ -20,6 +20,7 @@ import br.ufal.ic.p2.wepayu.models.pagamento.FabricaMetodoPagamento;
 import br.ufal.ic.p2.wepayu.models.sindicato.NaoFiliado;
 import br.ufal.ic.p2.wepayu.repository.RepositorioEmpregados;
 import br.ufal.ic.p2.wepayu.service.ArmazenamentoDeEstado;
+import br.ufal.ic.p2.wepayu.service.EscritorDeRelatorio;
 import br.ufal.ic.p2.wepayu.service.EstadoDoSistema;
 import br.ufal.ic.p2.wepayu.service.FolhaDePagamento;
 import br.ufal.ic.p2.wepayu.service.GerenciadorDeEstado;
@@ -29,10 +30,6 @@ import br.ufal.ic.p2.wepayu.util.Formatacao;
 
 import java.time.LocalDate;
 import java.util.List;
-import java.io.PrintWriter;
-import java.io.FileOutputStream;
-import java.io.OutputStreamWriter;
-import java.io.IOException;
 import java.util.function.Supplier;
 
 /**
@@ -61,6 +58,8 @@ public class Facade {
     private final RepositorioEmpregados repositorio = RepositorioEmpregados.getInstancia();
     // Servico que calcula a folha de pagamento e monta o relatorio.
     private final FolhaDePagamento folha = new FolhaDePagamento(repositorio);
+    // Grava o relatorio da folha em arquivo.
+    private final EscritorDeRelatorio escritor = new EscritorDeRelatorio();
     // Cuida das fotos do estado: undo/redo (Memento) e restauracao do estado salvo.
     private final GerenciadorDeEstado gerenciador = new GerenciadorDeEstado(repositorio, folha);
     // Grava e le em disco o arquivo onde o estado do sistema e persistido ao encerrar.
@@ -529,11 +528,7 @@ public class Facade {
 
         String relatorio = folha.gerarRelatorio(dataConvertida);
 
-        try (PrintWriter out = new PrintWriter(new OutputStreamWriter(new FileOutputStream(saida), "UTF-8"))) {
-            out.print(relatorio);
-        } catch (IOException e) {
-            throw new RuntimeException("Erro ao escrever arquivo da folha: " + e.getMessage(), e);
-        }
+        escritor.escrever(saida, relatorio);
         gerenciador.registrarComando(fotoAntes);
     }
 
