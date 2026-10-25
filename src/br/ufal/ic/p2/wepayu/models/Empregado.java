@@ -58,11 +58,10 @@ public abstract class Empregado implements Serializable{
     public AgendaPagamento getAgenda() { return agenda; }
 
     /**
-     * Cada subclasse concreta informa seu proprio tipo ("horista", "assalariado"
-     * ou "comissionado"), usado pela Facade para decidir regras de calculo e
-     * validacao especificas.
+     * Cada subclasse concreta informa o seu proprio tipo (TipoEmpregado.HORISTA,
+     * ASSALARIADO ou COMISSIONADO).
      */
-    public abstract String getTipo();
+    public abstract TipoEmpregado getTipo();
 
     /**
      * Informa em qual secao do relatorio da folha este empregado aparece. Cada tipo

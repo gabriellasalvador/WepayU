@@ -20,8 +20,8 @@ public class EmpregadoAssalariado extends Empregado {
     }
 
     @Override
-    public String getTipo() {
-        return "assalariado";
+    public TipoEmpregado getTipo() {
+        return TipoEmpregado.ASSALARIADO;
     }
 
     @Override

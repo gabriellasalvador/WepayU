@@ -29,7 +29,7 @@ public class EmpregadoComissionado extends Empregado {
     }
 
     @Override
-    public String getTipo() { return "comissionado"; }
+    public TipoEmpregado getTipo() { return TipoEmpregado.COMISSIONADO; }
 
     @Override
     public CategoriaFolha getCategoria() {

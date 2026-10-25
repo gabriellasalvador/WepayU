@@ -26,7 +26,7 @@ public class EmpregadoHorista extends Empregado {
     }
 
     @Override
-    public String getTipo() { return "horista"; }
+    public TipoEmpregado getTipo() { return TipoEmpregado.HORISTA; }
 
     @Override
     public CategoriaFolha getCategoria() {

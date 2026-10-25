@@ -13,6 +13,7 @@ import br.ufal.ic.p2.wepayu.Exception.sistema.SistemaEncerradoException;
 import br.ufal.ic.p2.wepayu.Exception.tipoempregado.*;
 import br.ufal.ic.p2.wepayu.models.CartaoDePonto;
 import br.ufal.ic.p2.wepayu.models.Empregado;
+import br.ufal.ic.p2.wepayu.models.TipoEmpregado;
 import br.ufal.ic.p2.wepayu.models.EmpregadoAssalariado;
 import br.ufal.ic.p2.wepayu.models.EmpregadoComissionado;
 import br.ufal.ic.p2.wepayu.models.EmpregadoHorista;
@@ -142,59 +143,78 @@ public class Facade {
     }
 
     /**
-     * Cria um empregado horista ou assalariado (nao comissionado).
-     * Valida nome, endereco, tipo e salario antes de persistir o novo empregado.
+     * Garante que um texto obrigatorio foi informado (nao nulo e nao vazio), lancando
+     * a excecao indicada em caso contrario. Evita repetir o mesmo "if" em cada comando.
      */
-    public String criarEmpregado(String nome, String endereco, String tipo, String salario) throws ValidacaoException {
-        verificarSistemaAtivo();
-        byte[] fotoAntes = tirarFoto();
-        if (nome == null || nome.isEmpty()) throw new NomeNuloException();
-        if (endereco == null || endereco.isEmpty()) throw new EnderecoNuloException();
-        if (!tipo.equals("horista") && !tipo.equals("assalariado") && !tipo.equals("comissionado")) {
-            throw new TipoInvalidoException();
-        }
-        if (tipo.equals("comissionado")) throw new TipoNaoAplicavelException();
-        if (salario == null || salario.isEmpty()) throw new SalarioNuloException();
+    private void exigirPreenchido(String valor, Supplier<? extends ValidacaoException> erro) throws ValidacaoException {
+        if (valor == null || valor.isEmpty()) throw erro.get();
+    }
 
-        double salarioConvertido = converterParaDouble(salario, SalarioNaoNumericoException::new);
-        if (salarioConvertido < 0) throw new SalarioNegativoException();
+    /**
+     * Valida e converte um salario recebido como texto: obrigatorio, numerico e nao
+     * negativo. Usado ao criar empregados e ao alterar o salario.
+     */
+    private double converterSalario(String salario) throws ValidacaoException {
+        exigirPreenchido(salario, SalarioNuloException::new);
+        double convertido = converterParaDouble(salario, SalarioNaoNumericoException::new);
+        if (convertido < 0) throw new SalarioNegativoException();
+        return convertido;
+    }
 
+    /**
+     * Valida e converte uma comissao recebida como texto: obrigatoria, numerica e nao
+     * negativa. Usado ao criar comissionados e ao alterar a comissao.
+     */
+    private double converterComissao(String comissao) throws ValidacaoException {
+        exigirPreenchido(comissao, ComissaoNulaException::new);
+        double convertida = converterParaDouble(comissao, ComissaoNaoNumericaException::new);
+        if (convertida < 0) throw new ComissaoNegativaException();
+        return convertida;
+    }
+
+    /**
+     * Gera o proximo id, cria o empregado pela fabrica do tipo (TipoEmpregado) e o
+     * registra no sistema, empilhando o estado anterior para o undo.
+     */
+    private String cadastrar(TipoEmpregado tipo, String nome, String endereco,
+                             double salario, double comissao, byte[] fotoAntes) {
         String id = String.valueOf(proximoId++);
-        Empregado empregado = tipo.equals("horista")
-                ? new EmpregadoHorista(id, nome, endereco, salarioConvertido)
-                : new EmpregadoAssalariado(id, nome, endereco, salarioConvertido);
-        empregados.put(id, empregado);
+        empregados.put(id, tipo.criar(id, nome, endereco, salario, comissao));
         registrarComando(fotoAntes);
         return id;
     }
 
     /**
-     * Sobrecarga usada para criar empregados do tipo comissionado, que exigem
-     * tambem o valor da comissao alem do salario fixo.
+     * Cria um empregado de um tipo que nao tem comissao (horista ou assalariado).
+     * Valida nome, endereco, tipo e salario antes de persistir o novo empregado.
+     */
+    public String criarEmpregado(String nome, String endereco, String tipo, String salario) throws ValidacaoException {
+        verificarSistemaAtivo();
+        byte[] fotoAntes = tirarFoto();
+        exigirPreenchido(nome, NomeNuloException::new);
+        exigirPreenchido(endereco, EnderecoNuloException::new);
+        TipoEmpregado tipoEmpregado = TipoEmpregado.porNome(tipo);
+        if (tipoEmpregado.exigeComissao()) throw new TipoNaoAplicavelException();
+        double salarioConvertido = converterSalario(salario);
+
+        return cadastrar(tipoEmpregado, nome, endereco, salarioConvertido, 0, fotoAntes);
+    }
+
+    /**
+     * Sobrecarga usada para criar empregados de um tipo que exige comissao (o
+     * comissionado), que informam tambem o valor da comissao alem do salario fixo.
      */
     public String criarEmpregado(String nome, String endereco, String tipo, String salario, String comissao) throws ValidacaoException {
         verificarSistemaAtivo();
         byte[] fotoAntes = tirarFoto();
-        if (nome == null || nome.isEmpty()) throw new NomeNuloException();
-        if (endereco == null || endereco.isEmpty()) throw new EnderecoNuloException();
-        if (!tipo.equals("horista") && !tipo.equals("assalariado") && !tipo.equals("comissionado")) {
-            throw new TipoInvalidoException();
-        }
-        if (!tipo.equals("comissionado")) throw new TipoNaoAplicavelException();
-        if (salario == null || salario.isEmpty()) throw new SalarioNuloException();
+        exigirPreenchido(nome, NomeNuloException::new);
+        exigirPreenchido(endereco, EnderecoNuloException::new);
+        TipoEmpregado tipoEmpregado = TipoEmpregado.porNome(tipo);
+        if (!tipoEmpregado.exigeComissao()) throw new TipoNaoAplicavelException();
+        double salarioConvertido = converterSalario(salario);
+        double comissaoConvertida = converterComissao(comissao);
 
-        double salarioConvertido = converterParaDouble(salario, SalarioNaoNumericoException::new);
-        if (salarioConvertido < 0) throw new SalarioNegativoException();
-        if (comissao == null || comissao.isEmpty()) throw new ComissaoNulaException();
-
-        double comissaoConvertida = converterParaDouble(comissao, ComissaoNaoNumericaException::new);
-        if (comissaoConvertida < 0) throw new ComissaoNegativaException();
-
-        String id = String.valueOf(proximoId++);
-        Empregado empregado = new EmpregadoComissionado(id, nome, endereco, salarioConvertido, comissaoConvertida);
-        empregados.put(id, empregado);
-        registrarComando(fotoAntes);
-        return id;
+        return cadastrar(tipoEmpregado, nome, endereco, salarioConvertido, comissaoConvertida, fotoAntes);
     }
 
     /**
@@ -223,7 +243,7 @@ public class Facade {
         switch (atributo) {
             case "nome": return empregado.getNome();
             case "endereco": return empregado.getEndereco();
-            case "tipo": return empregado.getTipo();
+            case "tipo": return empregado.getTipo().getNome();
             case "salario": return formataValor(empregado.getSalario());
             // Comissao: quem nao e comissionado lanca EmpregadoNaoEhComissionadoException sozinho.
             case "comissao":
@@ -563,32 +583,24 @@ public class Facade {
     }
 
     /**
-     * Troca o tipo de um empregado (horista/assalariado/comissionado), criando uma
-     * nova instancia da subclasse correta (mantendo o mesmo id) e copiando para ela
-     * o estado comum do empregado antigo (nome, endereco, sindicalizacao, forma de
-     * pagamento, etc). Permite opcionalmente definir salario/comissao no momento da troca.
+     * Troca o tipo de um empregado, criando pela fabrica (TipoEmpregado) uma nova
+     * instancia da classe correta (mantendo o mesmo id) e copiando para ela o estado
+     * comum do empregado antigo (nome, endereco, sindicalizacao, forma de pagamento,
+     * etc). Permite opcionalmente definir salario/comissao no momento da troca.
      */
     private void trocarTipo(Empregado antigo, String novoTipo, String novoSalario, String novaComissao) throws ValidacaoException {
+        TipoEmpregado tipo = TipoEmpregado.porNome(novoTipo);
+
         double salarioFinal = antigo.getSalario();
         if (novoSalario != null) {
             salarioFinal = converterParaDouble(novoSalario, SalarioNaoNumericoException::new);
         }
-
-        Empregado novo;
-        if (novoTipo.equals("horista")) {
-            novo = new EmpregadoHorista(antigo.getId(), antigo.getNome(), antigo.getEndereco(), salarioFinal);
-        } else if (novoTipo.equals("assalariado")) {
-            novo = new EmpregadoAssalariado(antigo.getId(), antigo.getNome(), antigo.getEndereco(), salarioFinal);
-        } else if (novoTipo.equals("comissionado")) {
-            double comissaoFinal = 0;
-            if (novaComissao != null) {
-                comissaoFinal = converterParaDouble(novaComissao, ComissaoNaoNumericaException::new);
-            }
-            novo = new EmpregadoComissionado(antigo.getId(), antigo.getNome(), antigo.getEndereco(), salarioFinal, comissaoFinal);
-        } else {
-            throw new TipoInvalidoException();
+        double comissaoFinal = 0;
+        if (novaComissao != null) {
+            comissaoFinal = converterParaDouble(novaComissao, ComissaoNaoNumericaException::new);
         }
 
+        Empregado novo = tipo.criar(antigo.getId(), antigo.getNome(), antigo.getEndereco(), salarioFinal, comissaoFinal);
         novo.copiarEstadoComumDe(antigo);
         empregados.put(antigo.getId(), novo);
     }
@@ -605,24 +617,18 @@ public class Facade {
 
         switch (atributo) {
             case "nome":
-                if (valor == null || valor.isEmpty()) throw new NomeNuloException();
+                exigirPreenchido(valor, NomeNuloException::new);
                 empregado.setNome(valor);
                 break;
             case "endereco":
-                if (valor == null || valor.isEmpty()) throw new EnderecoNuloException();
+                exigirPreenchido(valor, EnderecoNuloException::new);
                 empregado.setEndereco(valor);
                 break;
             case "salario":
-                if (valor == null || valor.isEmpty()) throw new SalarioNuloException();
-                double salarioConvertido = converterParaDouble(valor, SalarioNaoNumericoException::new);
-                if (salarioConvertido < 0) throw new SalarioNegativoException();
-                empregado.setSalario(salarioConvertido);
+                empregado.setSalario(converterSalario(valor));
                 break;
             case "comissao":
-                if (valor == null || valor.isEmpty()) throw new ComissaoNulaException();
-                double comissaoConvertida = converterParaDouble(valor, ComissaoNaoNumericaException::new);
-                if (comissaoConvertida < 0) throw new ComissaoNegativaException();
-                empregado.setComissao(comissaoConvertida);
+                empregado.setComissao(converterComissao(valor));
                 break;
             case "tipo":
                 trocarTipo(empregado, valor, null, null);
@@ -656,10 +662,12 @@ public class Facade {
         Empregado empregado = buscarEmpregado(emp);
         if (!atributo.equals("tipo")) throw new AtributoNaoExisteException();
 
-        if (valor.equals("horista")) {
-            trocarTipo(empregado, valor, valorExtra, null);
-        } else if (valor.equals("comissionado")) {
+        // O proprio tipo informa que dado extra aceita na troca: salario, comissao ou nenhum.
+        TipoEmpregado tipo = TipoEmpregado.porNome(valor);
+        if (tipo.exigeComissao()) {
             trocarTipo(empregado, valor, null, valorExtra);
+        } else if (tipo.trocaComNovoSalario()) {
+            trocarTipo(empregado, valor, valorExtra, null);
         } else {
             throw new TipoInvalidoException();
         }
