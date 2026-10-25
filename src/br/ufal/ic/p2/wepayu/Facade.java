@@ -6,6 +6,7 @@ import br.ufal.ic.p2.wepayu.excecoes.lancamentos.*;
 import br.ufal.ic.p2.wepayu.excecoes.pagamento.AgenciaNulaException;
 import br.ufal.ic.p2.wepayu.excecoes.pagamento.BancoNuloException;
 import br.ufal.ic.p2.wepayu.excecoes.pagamento.ContaCorrenteNulaException;
+import br.ufal.ic.p2.wepayu.excecoes.pagamento.MetodoPagamentoInvalidoException;
 import br.ufal.ic.p2.wepayu.excecoes.sindicato.*;
 import br.ufal.ic.p2.wepayu.excecoes.sistema.SistemaEncerradoException;
 import br.ufal.ic.p2.wepayu.excecoes.tipoempregado.*;
@@ -149,8 +150,7 @@ public class Facade {
      */
     private double converterSalario(String salario) throws ValidacaoException {
         exigirPreenchido(salario, SalarioNuloException::new);
-        double convertido = converterParaDouble(salario, SalarioNaoNumericoException::new);
-        return convertido;
+        return converterParaDouble(salario, SalarioNaoNumericoException::new);
     }
 
     /**
@@ -159,8 +159,7 @@ public class Facade {
      */
     private double converterComissao(String comissao) throws ValidacaoException {
         exigirPreenchido(comissao, ComissaoNulaException::new);
-        double convertida = converterParaDouble(comissao, ComissaoNaoNumericaException::new);
-        return convertida;
+        return converterParaDouble(comissao, ComissaoNaoNumericaException::new);
     }
 
     /**
@@ -216,8 +215,8 @@ public class Facade {
         verificarSistemaAtivo();
         EstadoDoSistema fotoAntes = gerenciador.tirarFoto();
         Empregado empregado = buscarEmpregado(emp);
-        gerenciador.registrarComando(fotoAntes);
         repositorio.remover(empregado.getId());
+        gerenciador.registrarComando(fotoAntes);
     }
 
     /**
@@ -449,7 +448,7 @@ public class Facade {
                 empregado.setAgenda(agendas.buscar(valor));
                 break;
             case "sindicalizado":
-                if (valor.equals("false")) {
+                if ("false".equals(valor)) {
                     empregado.setSindicato(new NaoFiliado());
                 } else {
                     throw new ValorSindicalizadoInvalidoException();
@@ -471,7 +470,7 @@ public class Facade {
         verificarSistemaAtivo();
         EstadoDoSistema fotoAntes = gerenciador.tirarFoto();
         Empregado empregado = buscarEmpregado(emp);
-        if (!atributo.equals("tipo")) throw new AtributoNaoExisteException();
+        if (!"tipo".equals(atributo)) throw new AtributoNaoExisteException();
 
         // O proprio tipo informa que dado extra aceita na troca: salario, comissao ou nenhum.
         TipoEmpregado tipo = TipoEmpregado.porNome(valor);
@@ -494,6 +493,9 @@ public class Facade {
         verificarSistemaAtivo();
         EstadoDoSistema fotoAntes = gerenciador.tirarFoto();
         Empregado empregado = buscarEmpregado(emp);
+        // Esta sobrecarga so serve para sindicalizar (atributo "sindicalizado", valor "true").
+        if (!"sindicalizado".equals(atributo)) throw new AtributoNaoExisteException();
+        if (!"true".equals(valor)) throw new ValorSindicalizadoInvalidoException();
 
         exigirPreenchido(idSindicato, IdentificacaoSindicatoNulaException::new);
         exigirPreenchido(taxaSindical, TaxaSindicalNulaException::new);
@@ -511,6 +513,9 @@ public class Facade {
         verificarSistemaAtivo();
         EstadoDoSistema fotoAntes = gerenciador.tirarFoto();
         Empregado empregado = buscarEmpregado(emp);
+        // Esta sobrecarga so serve para pagamento em banco (atributo "metodoPagamento", valor1 "banco").
+        if (!"metodoPagamento".equals(atributo)) throw new AtributoNaoExisteException();
+        if (!"banco".equals(valor1)) throw new MetodoPagamentoInvalidoException();
 
         exigirPreenchido(banco, BancoNuloException::new);
         exigirPreenchido(agencia, AgenciaNulaException::new);
