@@ -8,9 +8,14 @@ import br.ufal.ic.p2.wepayu.excecoes.pagamento.BancoNuloException;
 import br.ufal.ic.p2.wepayu.excecoes.pagamento.ContaCorrenteNulaException;
 import br.ufal.ic.p2.wepayu.excecoes.sindicato.*;
 import br.ufal.ic.p2.wepayu.excecoes.sistema.SistemaEncerradoException;
+import br.ufal.ic.p2.wepayu.excecoes.tipoempregado.*;
 import br.ufal.ic.p2.wepayu.models.CartaoDePonto;
 import br.ufal.ic.p2.wepayu.models.Empregado;
 import br.ufal.ic.p2.wepayu.models.TipoEmpregado;
+import br.ufal.ic.p2.wepayu.models.EmpregadoAssalariado;
+import br.ufal.ic.p2.wepayu.models.EmpregadoComissionado;
+import br.ufal.ic.p2.wepayu.models.EmpregadoHorista;
+import br.ufal.ic.p2.wepayu.models.Periodo;
 import br.ufal.ic.p2.wepayu.models.ResultadoVenda;
 import br.ufal.ic.p2.wepayu.models.TaxaServico;
 import br.ufal.ic.p2.wepayu.models.pagamento.Banco;
@@ -22,6 +27,7 @@ import br.ufal.ic.p2.wepayu.service.ArmazenamentoDeEstado;
 import br.ufal.ic.p2.wepayu.service.EstadoDoSistema;
 import br.ufal.ic.p2.wepayu.service.FolhaDePagamento;
 import br.ufal.ic.p2.wepayu.service.GerenciadorDeEstado;
+import br.ufal.ic.p2.wepayu.util.Datas;
 import br.ufal.ic.p2.wepayu.util.Formatacao;
 
 
@@ -248,20 +254,6 @@ public class Facade {
     }
 
     /**
-     * Converte uma data no formato "dd/mm/aaaa" (String) para LocalDate.
-     * Qualquer falha de parsing/validade de data e propagada como Exception generica,
-     * para que os metodos publicos a capturem e traduzam para a excecao de negocio adequada
-     * (ex.: DataInvalidaException, DataInicialInvalidaException, DataFinalInvalidaException).
-     */
-    private LocalDate parseData(String data) throws Exception {
-        String[] partes = data.split("/");
-        int dia = Integer.parseInt(partes[0]);
-        int mes = Integer.parseInt(partes[1]);
-        int ano = Integer.parseInt(partes[2]);
-        return LocalDate.of(ano, mes, dia);
-    }
-
-    /**
      * Lanca um cartao de ponto (horas trabalhadas em uma data) para um empregado horista.
      */
     public void lancaCartao(String emp, String data, String horas) throws ValidacaoException {
@@ -269,12 +261,7 @@ public class Facade {
         EstadoDoSistema fotoAntes = gerenciador.tirarFoto();
         Empregado empregado = buscarEmpregado(emp);
 
-        LocalDate dataConvertida;
-        try {
-            dataConvertida = parseData(data);
-        } catch (Exception e) {
-            throw new DataInvalidaException();
-        }
+        LocalDate dataConvertida = Datas.converter(data, DataInvalidaException::new);
         double horasConvertidas = converterParaDouble(horas, HorasNaoNumericasException::new);
         if (horasConvertidas <= 0) throw new HorasNaoPositivasException();
 
@@ -320,16 +307,11 @@ public class Facade {
         Empregado empregado = buscarEmpregado(emp);
         List<CartaoDePonto> cartoes = empregado.getCartoes();
 
-        LocalDate inicio;
-        try { inicio = parseData(dataInicial); } catch (Exception e) { throw new DataInicialInvalidaException(); }
-        LocalDate fim;
-        try { fim = parseData(dataFinal); } catch (Exception e) { throw new DataFinalInvalidaException(); }
-        if (inicio.isAfter(fim)) throw new DataInicialPosteriorException();
+        Periodo periodo = Periodo.de(dataInicial, dataFinal);
 
         double total = 0;
         for (CartaoDePonto cartao : cartoes) {
-            LocalDate data = cartao.getData();
-            if (!data.isBefore(inicio) && data.isBefore(fim)) {
+            if (periodo.contem(cartao.getData())) {
                 total += Math.min(cartao.getHoras(), 8);
             }
         }
@@ -345,16 +327,11 @@ public class Facade {
         Empregado empregado = buscarEmpregado(emp);
         List<CartaoDePonto> cartoes = empregado.getCartoes();
 
-        LocalDate inicio;
-        try { inicio = parseData(dataInicial); } catch (Exception e) { throw new DataInicialInvalidaException(); }
-        LocalDate fim;
-        try { fim = parseData(dataFinal); } catch (Exception e) { throw new DataFinalInvalidaException(); }
-        if (inicio.isAfter(fim)) throw new DataInicialPosteriorException();
+        Periodo periodo = Periodo.de(dataInicial, dataFinal);
 
         double total = 0;
         for (CartaoDePonto cartao : cartoes) {
-            LocalDate data = cartao.getData();
-            if (!data.isBefore(inicio) && data.isBefore(fim)) {
+            if (periodo.contem(cartao.getData())) {
                 total += Math.max(0, cartao.getHoras() - 8);
             }
         }
@@ -369,12 +346,7 @@ public class Facade {
         EstadoDoSistema fotoAntes = gerenciador.tirarFoto();
         Empregado empregado = buscarEmpregado(emp);
 
-        LocalDate dataConvertida;
-        try {
-            dataConvertida = parseData(data);
-        } catch (Exception e) {
-            throw new DataInvalidaException();
-        }
+        LocalDate dataConvertida = Datas.converter(data, DataInvalidaException::new);
         double valorConvertido = converterParaDouble(valor, ValorNaoNumericoException::new);
         if (valorConvertido <= 0) throw new ValorNaoPositivoException();
 
@@ -391,16 +363,11 @@ public class Facade {
         Empregado empregado = buscarEmpregado(emp);
         List<ResultadoVenda> vendas = empregado.getVendas();
 
-        LocalDate inicio;
-        try { inicio = parseData(dataInicial); } catch (Exception e) { throw new DataInicialInvalidaException(); }
-        LocalDate fim;
-        try { fim = parseData(dataFinal); } catch (Exception e) { throw new DataFinalInvalidaException(); }
-        if (inicio.isAfter(fim)) throw new DataInicialPosteriorException();
+        Periodo periodo = Periodo.de(dataInicial, dataFinal);
 
         double total = 0;
         for (ResultadoVenda venda : vendas) {
-            LocalDate data = venda.getData();
-            if (!data.isBefore(inicio) && data.isBefore(fim)) {
+            if (periodo.contem(venda.getData())) {
                 total += venda.getValor();
             }
         }
@@ -431,12 +398,7 @@ public class Facade {
         if (membro == null || membro.isEmpty()) throw new IdentificacaoMembroNulaException();
         Empregado empregado = buscarPorIdSindicato(membro);
 
-        LocalDate dataConvertida;
-        try {
-            dataConvertida = parseData(data);
-        } catch (Exception e) {
-            throw new DataInvalidaException();
-        }
+        LocalDate dataConvertida = Datas.converter(data, DataInvalidaException::new);
         double valorConvertido = converterParaDouble(valor, ValorNaoNumericoException::new);
         if (valorConvertido <= 0) throw new ValorNaoPositivoException();
 
@@ -454,16 +416,11 @@ public class Facade {
         // Lanca EmpregadoNaoEhSindicalizadoException se nao for filiado (antes de validar as datas).
         List<TaxaServico> taxas = empregado.getSindicato().getTaxasServico();
 
-        LocalDate inicio;
-        try { inicio = parseData(dataInicial); } catch (Exception e) { throw new DataInicialInvalidaException(); }
-        LocalDate fim;
-        try { fim = parseData(dataFinal); } catch (Exception e) { throw new DataFinalInvalidaException(); }
-        if (inicio.isAfter(fim)) throw new DataInicialPosteriorException();
+        Periodo periodo = Periodo.de(dataInicial, dataFinal);
 
         double total = 0;
         for (TaxaServico taxa : taxas) {
-            LocalDate data = taxa.getData();
-            if (!data.isBefore(inicio) && data.isBefore(fim)) {
+            if (periodo.contem(taxa.getData())) {
                 total += taxa.getValor();
             }
         }
@@ -622,8 +579,7 @@ public class Facade {
      */
     public String totalFolha(String data) throws ValidacaoException {
         verificarSistemaAtivo();
-        LocalDate dataConvertida;
-        try { dataConvertida = parseData(data); } catch (Exception e) { throw new DataInvalidaException(); }
+        LocalDate dataConvertida = Datas.converter(data, DataInvalidaException::new);
         return Formatacao.valor(folha.calcular(dataConvertida, false).getTotal());
     }
 
@@ -636,8 +592,7 @@ public class Facade {
     public void rodaFolha(String data, String saida) throws ValidacaoException {
         verificarSistemaAtivo();
         EstadoDoSistema fotoAntes = gerenciador.tirarFoto();
-        LocalDate dataConvertida;
-        try { dataConvertida = parseData(data); } catch (Exception e) { throw new DataInvalidaException(); }
+        LocalDate dataConvertida = Datas.converter(data, DataInvalidaException::new);
 
         String relatorio = folha.gerarRelatorio(dataConvertida);
 
