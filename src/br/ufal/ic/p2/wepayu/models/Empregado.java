@@ -31,7 +31,7 @@ public abstract class Empregado implements Serializable{
     private String endereco;
     private double salario;
     // Strategy: define quando e pago e qual periodo cada pagamento cobre.
-    private final AgendaPagamento agenda;
+    private AgendaPagamento agenda;
 
     /**
      * Novo empregado sempre comeca nao sindicalizado (NaoFiliado); a filiacao
@@ -55,6 +55,9 @@ public abstract class Empregado implements Serializable{
 
     /** Agenda de pagamento do empregado (quando e pago e qual periodo cada pagamento cobre). */
     public AgendaPagamento getAgenda() { return agenda; }
+
+    /** Troca a agenda de pagamento do empregado (por uma que exista no CatalogoDeAgendas). */
+    public void setAgenda(AgendaPagamento agenda) { this.agenda = agenda; }
 
     /**
      * Cada subclasse concreta informa o seu proprio tipo (TipoEmpregado.HORISTA,

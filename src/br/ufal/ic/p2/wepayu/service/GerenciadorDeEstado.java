@@ -3,6 +3,8 @@ package br.ufal.ic.p2.wepayu.service;
 import br.ufal.ic.p2.wepayu.excecoes.sistema.NaoHaComandoDesfazerException;
 import br.ufal.ic.p2.wepayu.excecoes.sistema.NaoHaComandoRefazerException;
 import br.ufal.ic.p2.wepayu.models.Empregado;
+import br.ufal.ic.p2.wepayu.models.agenda.AgendaPagamento;
+import br.ufal.ic.p2.wepayu.models.agenda.CatalogoDeAgendas;
 import br.ufal.ic.p2.wepayu.repository.RepositorioEmpregados;
 
 import java.io.ByteArrayInputStream;
@@ -21,7 +23,8 @@ import java.util.Map;
  * Papeis do padrao: esta classe cria as fotos do estado (EstadoDoSistema) e sabe
  * restaura-las, e tambem guarda as fotos nas pilhas de desfazer e refazer. O estado
  * do sistema que entra em cada foto e formado pelo repositorio de empregados (com o
- * proximo id) e pelas folhas ja geradas (FolhaDePagamento).
+ * proximo id) pelas folhas ja geradas (FolhaDePagamento) e pelas agendas de pagamento
+ * disponiveis (CatalogoDeAgendas).
  *
  * Cada comando que altera dados tira uma foto ANTES de executar e a registra com
  * registrarComando. O mesmo mecanismo serve para gravar o estado em disco ao encerrar.
@@ -29,14 +32,16 @@ import java.util.Map;
 public class GerenciadorDeEstado {
     private final RepositorioEmpregados repositorio;
     private final FolhaDePagamento folha;
+    private final CatalogoDeAgendas catalogo;
 
     // Cada comando que muda o estado empilha em pilhaUndo a foto de ANTES de executar.
     private final Deque<EstadoDoSistema> pilhaUndo = new ArrayDeque<>();
     private final Deque<EstadoDoSistema> pilhaRedo = new ArrayDeque<>();
 
-    public GerenciadorDeEstado(RepositorioEmpregados repositorio, FolhaDePagamento folha) {
+    public GerenciadorDeEstado(RepositorioEmpregados repositorio, FolhaDePagamento folha, CatalogoDeAgendas catalogo) {
         this.repositorio = repositorio;
         this.folha = folha;
+        this.catalogo = catalogo;
     }
 
     /**
@@ -50,6 +55,7 @@ public class GerenciadorDeEstado {
             escritorDeObjetos.writeObject(repositorio.copiarEmpregados());
             escritorDeObjetos.writeObject(folha.copiarFolhasGeradas());
             escritorDeObjetos.writeInt(repositorio.getProximoId());
+            escritorDeObjetos.writeObject(catalogo.copiarAgendas());
         } catch (IOException e) {
             throw new RuntimeException("Erro ao tirar foto do sistema: " + e.getMessage(), e);
         }
@@ -66,9 +72,11 @@ public class GerenciadorDeEstado {
             Map<String, Empregado> empregadosRestaurados = (Map<String, Empregado>) leitorDeObjetos.readObject();
             Map<LocalDate, String> folhasRestauradas = (Map<LocalDate, String>) leitorDeObjetos.readObject();
             int proximoIdRestaurado = leitorDeObjetos.readInt();
+            Map<String, AgendaPagamento> agendasRestauradas = (Map<String, AgendaPagamento>) leitorDeObjetos.readObject();
             // Troca so o conteudo do repositorio unico; o objeto repositorio continua o mesmo.
             repositorio.restaurar(empregadosRestaurados, proximoIdRestaurado);
             folha.restaurarFolhasGeradas(folhasRestauradas);
+            catalogo.restaurar(agendasRestauradas);
         } catch (IOException | ClassNotFoundException e) {
             throw new RuntimeException("Erro ao restaurar foto do sistema: " + e.getMessage(), e);
         }

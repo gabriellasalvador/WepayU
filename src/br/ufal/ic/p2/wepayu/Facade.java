@@ -13,6 +13,7 @@ import br.ufal.ic.p2.wepayu.models.CartaoDePonto;
 import br.ufal.ic.p2.wepayu.models.Empregado;
 import br.ufal.ic.p2.wepayu.models.TipoEmpregado;
 import br.ufal.ic.p2.wepayu.models.Periodo;
+import br.ufal.ic.p2.wepayu.models.agenda.CatalogoDeAgendas;
 import br.ufal.ic.p2.wepayu.models.ResultadoVenda;
 import br.ufal.ic.p2.wepayu.models.TaxaServico;
 import br.ufal.ic.p2.wepayu.models.pagamento.Banco;
@@ -60,8 +61,10 @@ public class Facade {
     private final FolhaDePagamento folha = new FolhaDePagamento(repositorio);
     // Grava o relatorio da folha em arquivo.
     private final EscritorDeRelatorio escritor = new EscritorDeRelatorio();
+    // Agendas de pagamento que podem ser dadas aos empregados.
+    private final CatalogoDeAgendas agendas = new CatalogoDeAgendas();
     // Cuida das fotos do estado: undo/redo (Memento) e restauracao do estado salvo.
-    private final GerenciadorDeEstado gerenciador = new GerenciadorDeEstado(repositorio, folha);
+    private final GerenciadorDeEstado gerenciador = new GerenciadorDeEstado(repositorio, folha, agendas);
     // Grava e le em disco o arquivo onde o estado do sistema e persistido ao encerrar.
     private final ArmazenamentoDeEstado armazenamento = new ArmazenamentoDeEstado("estado.dat");
     // Marca se encerrarSistema() ja foi chamado; depois disso nenhum outro comando pode rodar.
@@ -84,6 +87,7 @@ public class Facade {
         EstadoDoSistema fotoAntes = gerenciador.tirarFoto();
         repositorio.zerar();
         folha.limparFolhasGeradas();
+        agendas.redefinir();
         gerenciador.registrarComando(fotoAntes);
     }
 
@@ -240,6 +244,8 @@ public class Facade {
                 return empregado.getSindicato().getIdSindicato();
             case "taxaSindical":
                 return Formatacao.valor(empregado.getSindicato().getTaxaSindical());
+            case "agendaPagamento":
+                return empregado.getAgenda().getDescricao();
             default: throw new AtributoNaoExisteException();
         }
     }
@@ -429,6 +435,10 @@ public class Facade {
             case "metodoPagamento":
                 // A fabrica escolhe a classe certa (EmMaos ou Correios) ou lanca MetodoPagamentoInvalidoException.
                 empregado.setMetodoPagamento(FabricaMetodoPagamento.criarSemDadosExtras(valor));
+                break;
+            case "agendaPagamento":
+                // So vale uma agenda que exista no catalogo; senao lanca AgendaNaoDisponivelException.
+                empregado.setAgenda(agendas.buscar(valor));
                 break;
             case "sindicalizado":
                 if (valor.equals("false")) {
