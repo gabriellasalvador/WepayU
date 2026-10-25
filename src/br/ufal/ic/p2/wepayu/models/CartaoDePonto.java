@@ -1,5 +1,7 @@
 package br.ufal.ic.p2.wepayu.models;
 
+import br.ufal.ic.p2.wepayu.excecoes.lancamentos.HorasNaoPositivasException;
+
 import java.time.LocalDate;
 import java.io.Serializable;
 
@@ -18,7 +20,11 @@ public class CartaoDePonto implements Serializable{
     private LocalDate data;
     private double horas;
 
-    public CartaoDePonto(LocalDate data, double horas) {
+    /**
+     * @throws HorasNaoPositivasException se as horas forem zero ou negativas
+     */
+    public CartaoDePonto(LocalDate data, double horas) throws HorasNaoPositivasException {
+        if (horas <= 0) throw new HorasNaoPositivasException();
         this.data = data;
         this.horas = horas;
     }

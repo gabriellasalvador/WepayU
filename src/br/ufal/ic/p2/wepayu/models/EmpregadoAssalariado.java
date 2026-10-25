@@ -1,5 +1,7 @@
 package br.ufal.ic.p2.wepayu.models;
 
+import br.ufal.ic.p2.wepayu.excecoes.cadastro.SalarioNegativoException;
+
 import br.ufal.ic.p2.wepayu.models.agenda.AgendaMensalUltimoDiaUtil;
 import br.ufal.ic.p2.wepayu.models.folha.CategoriaFolha;
 import br.ufal.ic.p2.wepayu.util.Dinheiro;
@@ -15,7 +17,7 @@ import java.time.LocalDate;
  */
 public class EmpregadoAssalariado extends Empregado {
 
-    public EmpregadoAssalariado(String id, String nome, String endereco, double salario) {
+    public EmpregadoAssalariado(String id, String nome, String endereco, double salario) throws SalarioNegativoException {
         super(id, nome, endereco, salario, new AgendaMensalUltimoDiaUtil());
     }
 

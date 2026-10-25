@@ -1,5 +1,7 @@
 package br.ufal.ic.p2.wepayu.models;
 
+import br.ufal.ic.p2.wepayu.excecoes.cadastro.ComissaoNegativaException;
+import br.ufal.ic.p2.wepayu.excecoes.cadastro.SalarioNegativoException;
 import br.ufal.ic.p2.wepayu.excecoes.cadastro.TipoInvalidoException;
 
 /**
@@ -17,21 +19,24 @@ public enum TipoEmpregado {
 
     HORISTA("horista", false, true) {
         @Override
-        public Empregado criar(String id, String nome, String endereco, double salario, double comissao) {
+        public Empregado criar(String id, String nome, String endereco, double salario, double comissao)
+                throws SalarioNegativoException, ComissaoNegativaException {
             return new EmpregadoHorista(id, nome, endereco, salario);
         }
     },
 
     ASSALARIADO("assalariado", false, false) {
         @Override
-        public Empregado criar(String id, String nome, String endereco, double salario, double comissao) {
+        public Empregado criar(String id, String nome, String endereco, double salario, double comissao)
+                throws SalarioNegativoException, ComissaoNegativaException {
             return new EmpregadoAssalariado(id, nome, endereco, salario);
         }
     },
 
     COMISSIONADO("comissionado", true, false) {
         @Override
-        public Empregado criar(String id, String nome, String endereco, double salario, double comissao) {
+        public Empregado criar(String id, String nome, String endereco, double salario, double comissao)
+                throws SalarioNegativoException, ComissaoNegativaException {
             return new EmpregadoComissionado(id, nome, endereco, salario, comissao);
         }
     };
@@ -48,9 +53,11 @@ public enum TipoEmpregado {
 
     /**
      * Cria um empregado deste tipo. O parametro "comissao" so e usado pelos tipos
-     * que a exigem (exigeComissao()); os demais o ignoram.
+     * que a exigem (exigeComissao()); os demais o ignoram. Salario e comissao negativos
+     * sao recusados pelo proprio empregado.
      */
-    public abstract Empregado criar(String id, String nome, String endereco, double salario, double comissao);
+    public abstract Empregado criar(String id, String nome, String endereco, double salario, double comissao)
+            throws SalarioNegativoException, ComissaoNegativaException;
 
     /**
      * Converte um empregado para este tipo: cria pela fabrica uma nova instancia (mantendo
@@ -58,7 +65,8 @@ public enum TipoEmpregado {
      * comum do empregado antigo (sindicalizacao e forma de pagamento). O empregado antigo
      * nao e alterado; quem chama e responsavel por guardar o novo no lugar dele.
      */
-    public Empregado converter(Empregado antigo, double novoSalario, double novaComissao) {
+    public Empregado converter(Empregado antigo, double novoSalario, double novaComissao)
+            throws SalarioNegativoException, ComissaoNegativaException {
         Empregado novo = criar(antigo.getId(), antigo.getNome(), antigo.getEndereco(), novoSalario, novaComissao);
         novo.copiarEstadoComumDe(antigo);
         return novo;

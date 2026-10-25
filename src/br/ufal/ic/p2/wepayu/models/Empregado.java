@@ -1,5 +1,8 @@
 package br.ufal.ic.p2.wepayu.models;
 
+import br.ufal.ic.p2.wepayu.excecoes.cadastro.ComissaoNegativaException;
+import br.ufal.ic.p2.wepayu.excecoes.cadastro.SalarioNegativoException;
+
 import br.ufal.ic.p2.wepayu.excecoes.tipoempregado.EmpregadoNaoEhComissionadoException;
 import br.ufal.ic.p2.wepayu.excecoes.tipoempregado.EmpregadoNaoEhHoristaException;
 import br.ufal.ic.p2.wepayu.models.agenda.AgendaPagamento;
@@ -40,7 +43,9 @@ public abstract class Empregado implements Serializable{
      * @param agenda agenda de pagamento do empregado; cada tipo informa a sua padrao
      *               (horista: semanal 5, assalariado: mensal $, comissionado: semanal 2 5)
      */
-    public Empregado(String id, String nome, String endereco, double salario, AgendaPagamento agenda) {
+    public Empregado(String id, String nome, String endereco, double salario, AgendaPagamento agenda)
+            throws SalarioNegativoException {
+        if (salario < 0) throw new SalarioNegativoException();
         this.id = id;
         this.nome = nome;
         this.endereco = endereco;
@@ -126,7 +131,7 @@ public abstract class Empregado implements Serializable{
         throw new EmpregadoNaoEhComissionadoException();
     }
 
-    public void setComissao(double comissao) throws EmpregadoNaoEhComissionadoException {
+    public void setComissao(double comissao) throws EmpregadoNaoEhComissionadoException, ComissaoNegativaException {
         throw new EmpregadoNaoEhComissionadoException();
     }
 
@@ -170,7 +175,12 @@ public abstract class Empregado implements Serializable{
 
     public void setNome(String nome) { this.nome = nome; }
     public void setEndereco(String endereco) { this.endereco = endereco; }
-    public void setSalario(double salario) { this.salario = salario; }
+
+    /** @throws SalarioNegativoException se o salario for negativo */
+    public void setSalario(double salario) throws SalarioNegativoException {
+        if (salario < 0) throw new SalarioNegativoException();
+        this.salario = salario;
+    }
 
     // ---------- Forma de pagamento (comum a qualquer tipo de empregado) ----------
     // Strategy: a forma de pagamento e um objeto (EmMaos, Correios ou Banco) que

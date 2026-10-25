@@ -1,5 +1,7 @@
 package br.ufal.ic.p2.wepayu.models.sindicato;
 
+import br.ufal.ic.p2.wepayu.excecoes.sindicato.TaxaSindicalNegativaException;
+
 import br.ufal.ic.p2.wepayu.models.Periodo;
 import br.ufal.ic.p2.wepayu.models.TaxaServico;
 import br.ufal.ic.p2.wepayu.util.Dinheiro;
@@ -25,8 +27,13 @@ public class Filiado implements FiliacaoSindical {
     private double dividaSindical;
     private List<TaxaServico> taxasServico;
 
-    /** Filia o empregado: sem divida e sem taxas de servico lancadas. */
-    public Filiado(String idSindicato, double taxaSindical) {
+    /**
+     * Filia o empregado: sem divida e sem taxas de servico lancadas.
+     *
+     * @throws TaxaSindicalNegativaException se a taxa sindical for negativa
+     */
+    public Filiado(String idSindicato, double taxaSindical) throws TaxaSindicalNegativaException {
+        if (taxaSindical < 0) throw new TaxaSindicalNegativaException();
         this.idSindicato = idSindicato;
         this.taxaSindical = taxaSindical;
         this.dividaSindical = 0;

@@ -1,5 +1,7 @@
 package br.ufal.ic.p2.wepayu.models;
 
+import br.ufal.ic.p2.wepayu.excecoes.cadastro.SalarioNegativoException;
+
 import br.ufal.ic.p2.wepayu.models.agenda.AgendaSemanal;
 import br.ufal.ic.p2.wepayu.models.folha.CategoriaFolha;
 import br.ufal.ic.p2.wepayu.util.Dinheiro;
@@ -20,7 +22,7 @@ public class EmpregadoHorista extends Empregado {
     // Historico de todos os cartoes de ponto (data + horas) lancados para este empregado.
     private List<CartaoDePonto> cartoes = new ArrayList<>();
 
-    public EmpregadoHorista(String id, String nome, String endereco, double salario) {
+    public EmpregadoHorista(String id, String nome, String endereco, double salario) throws SalarioNegativoException {
         super(id, nome, endereco, salario, new AgendaSemanal(1, DayOfWeek.FRIDAY));
     }
 

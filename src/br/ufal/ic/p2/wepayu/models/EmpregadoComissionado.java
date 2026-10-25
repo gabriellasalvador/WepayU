@@ -1,5 +1,8 @@
 package br.ufal.ic.p2.wepayu.models;
 
+import br.ufal.ic.p2.wepayu.excecoes.cadastro.ComissaoNegativaException;
+import br.ufal.ic.p2.wepayu.excecoes.cadastro.SalarioNegativoException;
+
 import br.ufal.ic.p2.wepayu.models.agenda.AgendaSemanal;
 import br.ufal.ic.p2.wepayu.models.folha.CategoriaFolha;
 import br.ufal.ic.p2.wepayu.util.Dinheiro;
@@ -22,8 +25,10 @@ public class EmpregadoComissionado extends Empregado {
     // Historico de todas as vendas lancadas para este empregado.
     private List<ResultadoVenda> vendas = new ArrayList<>();
 
-    public EmpregadoComissionado(String id, String nome, String endereco, double salario, double comissao) {
+    public EmpregadoComissionado(String id, String nome, String endereco, double salario, double comissao)
+            throws SalarioNegativoException, ComissaoNegativaException {
         super(id, nome, endereco, salario, new AgendaSemanal(2, DayOfWeek.FRIDAY));
+        if (comissao < 0) throw new ComissaoNegativaException();
         this.comissao = comissao;
     }
 
@@ -57,7 +62,8 @@ public class EmpregadoComissionado extends Empregado {
     public double getComissao() { return comissao; }
 
     @Override
-    public void setComissao(double comissao) {
+    public void setComissao(double comissao) throws ComissaoNegativaException {
+        if (comissao < 0) throw new ComissaoNegativaException();
         this.comissao = comissao;
     }
 

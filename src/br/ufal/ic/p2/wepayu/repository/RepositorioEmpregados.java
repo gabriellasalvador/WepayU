@@ -1,6 +1,7 @@
 package br.ufal.ic.p2.wepayu.repository;
 
 import br.ufal.ic.p2.wepayu.excecoes.sindicato.IdentificacaoSindicatoDuplicadaException;
+import br.ufal.ic.p2.wepayu.excecoes.sindicato.TaxaSindicalNegativaException;
 import br.ufal.ic.p2.wepayu.models.Empregado;
 import br.ufal.ic.p2.wepayu.models.sindicato.Filiado;
 
@@ -45,9 +46,19 @@ public final class RepositorioEmpregados {
         return INSTANCIA;
     }
 
-    /** Gera o proximo id de empregado (como texto) e avanca o contador. */
-    public String gerarProximoId() {
-        return String.valueOf(proximoId++);
+    /** Id que o proximo empregado cadastrado vai receber (como texto); nao avanca o contador. */
+    public String proximoId() {
+        return String.valueOf(proximoId);
+    }
+
+    /**
+     * Cadastra um empregado novo e avanca o contador de ids. O empregado deve ter sido
+     * criado com o id de proximoId(); assim, se os dados dele forem invalidos e a criacao
+     * falhar, nenhum id e gasto.
+     */
+    public void cadastrar(Empregado novo) {
+        empregados.put(novo.getId(), novo);
+        proximoId++;
     }
 
     /**
@@ -113,7 +124,7 @@ public final class RepositorioEmpregados {
      * seu id). Como o repositorio enxerga todos os empregados, a regra mora aqui.
      */
     public void filiar(Empregado empregado, String idSindicato, double taxaSindical)
-            throws IdentificacaoSindicatoDuplicadaException {
+            throws IdentificacaoSindicatoDuplicadaException, TaxaSindicalNegativaException {
         if (idSindicatoEmUso(idSindicato, empregado)) throw new IdentificacaoSindicatoDuplicadaException();
         empregado.setSindicato(new Filiado(idSindicato, taxaSindical));
     }

@@ -1,5 +1,7 @@
 package br.ufal.ic.p2.wepayu.models;
 
+import br.ufal.ic.p2.wepayu.excecoes.lancamentos.ValorNaoPositivoException;
+
 import java.time.LocalDate;
 import java.io.Serializable;
 
@@ -16,7 +18,11 @@ public class TaxaServico implements Serializable{
     private LocalDate data;
     private double valor;
 
-    public TaxaServico(LocalDate data, double valor) {
+    /**
+     * @throws ValorNaoPositivoException se o valor for zero ou negativo
+     */
+    public TaxaServico(LocalDate data, double valor) throws ValorNaoPositivoException {
+        if (valor <= 0) throw new ValorNaoPositivoException();
         this.data = data;
         this.valor = valor;
     }

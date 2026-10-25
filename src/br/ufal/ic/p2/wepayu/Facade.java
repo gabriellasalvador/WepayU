@@ -144,37 +144,36 @@ public class Facade {
     }
 
     /**
-     * Valida e converte um salario recebido como texto: obrigatorio, numerico e nao
-     * negativo. Usado ao criar empregados e ao alterar o salario.
+     * Converte um salario recebido como texto: obrigatorio e numerico. Se ele pode ser
+     * negativo ou nao e regra do empregado, que recusa o valor ao receber o salario.
      */
     private double converterSalario(String salario) throws ValidacaoException {
         exigirPreenchido(salario, SalarioNuloException::new);
         double convertido = converterParaDouble(salario, SalarioNaoNumericoException::new);
-        if (convertido < 0) throw new SalarioNegativoException();
         return convertido;
     }
 
     /**
-     * Valida e converte uma comissao recebida como texto: obrigatoria, numerica e nao
-     * negativa. Usado ao criar comissionados e ao alterar a comissao.
+     * Converte uma comissao recebida como texto: obrigatoria e numerica. Se ela pode ser
+     * negativa ou nao e regra do empregado comissionado.
      */
     private double converterComissao(String comissao) throws ValidacaoException {
         exigirPreenchido(comissao, ComissaoNulaException::new);
         double convertida = converterParaDouble(comissao, ComissaoNaoNumericaException::new);
-        if (convertida < 0) throw new ComissaoNegativaException();
         return convertida;
     }
 
     /**
-     * Gera o proximo id, cria o empregado pela fabrica do tipo (TipoEmpregado) e o
-     * registra no sistema, empilhando o estado anterior para o undo.
+     * Cria o empregado pela fabrica do tipo (TipoEmpregado) e o cadastra no sistema,
+     * empilhando o estado anterior para o undo. O empregado e criado antes de o id ser
+     * gasto: se os dados forem invalidos (salario negativo, por exemplo), o id continua livre.
      */
     private String cadastrar(TipoEmpregado tipo, String nome, String endereco,
-                             double salario, double comissao, EstadoDoSistema fotoAntes) {
-        String id = repositorio.gerarProximoId();
-        repositorio.salvar(tipo.criar(id, nome, endereco, salario, comissao));
+                             double salario, double comissao, EstadoDoSistema fotoAntes) throws ValidacaoException {
+        Empregado novo = tipo.criar(repositorio.proximoId(), nome, endereco, salario, comissao);
+        repositorio.cadastrar(novo);
         gerenciador.registrarComando(fotoAntes);
-        return id;
+        return novo.getId();
     }
 
     /**
@@ -279,7 +278,6 @@ public class Facade {
 
         LocalDate dataConvertida = Datas.converter(data, DataInvalidaException::new);
         double horasConvertidas = converterParaDouble(horas, HorasNaoNumericasException::new);
-        if (horasConvertidas <= 0) throw new HorasNaoPositivasException();
 
         empregado.addCartao(new CartaoDePonto(dataConvertida, horasConvertidas));
         gerenciador.registrarComando(fotoAntes);
@@ -340,7 +338,6 @@ public class Facade {
 
         LocalDate dataConvertida = Datas.converter(data, DataInvalidaException::new);
         double valorConvertido = converterParaDouble(valor, ValorNaoNumericoException::new);
-        if (valorConvertido <= 0) throw new ValorNaoPositivoException();
 
         empregado.addVenda(new ResultadoVenda(dataConvertida, valorConvertido));
         gerenciador.registrarComando(fotoAntes);
@@ -369,7 +366,6 @@ public class Facade {
 
         LocalDate dataConvertida = Datas.converter(data, DataInvalidaException::new);
         double valorConvertido = converterParaDouble(valor, ValorNaoNumericoException::new);
-        if (valorConvertido <= 0) throw new ValorNaoPositivoException();
 
         empregado.getSindicato().registrarTaxaServico(new TaxaServico(dataConvertida, valorConvertido));
         gerenciador.registrarComando(fotoAntes);
@@ -501,7 +497,6 @@ public class Facade {
         exigirPreenchido(idSindicato, IdentificacaoSindicatoNulaException::new);
         exigirPreenchido(taxaSindical, TaxaSindicalNulaException::new);
         double taxaConvertida = converterParaDouble(taxaSindical, TaxaSindicalNaoNumericaException::new);
-        if (taxaConvertida < 0) throw new TaxaSindicalNegativaException();
 
         repositorio.filiar(empregado, idSindicato, taxaConvertida);
         gerenciador.registrarComando(fotoAntes);
