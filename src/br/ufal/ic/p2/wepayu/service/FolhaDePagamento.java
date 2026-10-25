@@ -19,9 +19,8 @@ import java.util.Map;
  * pede a cada um o calculo do seu pagamento (Empregado.calcularLinhaFolha) e monta o
  * relatorio em texto com a tabela de cada secao e os totais.
  *
- * Antes toda essa logica estava dentro da Facade. Agora a Facade so recebe o comando
- * (totalFolha ou rodaFolha), chama este servico e usa o resultado, o que deixa cada
- * classe com uma unica responsabilidade.
+ * A Facade so recebe o comando (totalFolha ou rodaFolha), chama este servico e usa
+ * o resultado; esta classe cuida apenas da folha.
  *
  * O servico tambem guarda as folhas ja geradas por data (cache), que fazem parte do
  * estado do sistema e por isso entram nas fotos de undo/redo (GerenciadorDeEstado).

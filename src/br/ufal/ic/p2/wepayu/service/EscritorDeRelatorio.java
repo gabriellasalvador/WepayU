@@ -7,8 +7,7 @@ import java.io.PrintWriter;
 
 /**
  * Grava um relatorio em texto em um arquivo (codificacao UTF-8). So cuida da escrita em
- * disco; o conteudo do relatorio vem pronto do FolhaDePagamento. Antes essa parte de
- * entrada e saida estava dentro da Facade.
+ * disco; o conteudo do relatorio vem pronto do FolhaDePagamento.
  */
 public class EscritorDeRelatorio {
 

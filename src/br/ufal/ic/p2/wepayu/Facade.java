@@ -125,7 +125,7 @@ public class Facade {
      * Converte um texto numerico (aceitando virgula ou ponto decimal) para double.
      * Se o texto for nulo ou invalido, lanca a excecao de negocio fornecida pelo
      * chamador, em vez de deixar escapar um NumberFormatException sem tratamento.
-     * Centraliza o que antes era repetido em cada comando que recebe numeros.
+     * Usado por todo comando que recebe numeros como texto.
      */
     private double converterParaDouble(String texto, Supplier<? extends ValidacaoException> erro) throws ValidacaoException {
         if (texto == null) throw erro.get();

@@ -2,9 +2,8 @@ package br.ufal.ic.p2.wepayu.models.pagamento;
 
 /**
  * Forma de pagamento "banco": o valor e depositado em uma conta corrente.
- * E a unica forma que carrega dados proprios (banco, agencia e conta), que
- * antes ficavam soltos dentro do Empregado mesmo quando ele nao recebia em
- * banco. Os dados sao finais: para mudar de conta cria-se um novo Banco.
+ * E a unica forma que carrega dados proprios (banco, agencia e conta). Os dados
+ * sao finais: para mudar de conta cria-se um novo Banco.
  * A validacao dos campos (nao nulos e nao vazios) continua na Facade, antes
  * deste objeto ser criado.
  */

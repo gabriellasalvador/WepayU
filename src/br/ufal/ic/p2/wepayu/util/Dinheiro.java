@@ -2,9 +2,7 @@ package br.ufal.ic.p2.wepayu.util;
 
 /**
  * Operacoes auxiliares sobre valores monetarios, compartilhadas por varias
- * partes do sistema (calculo de salarios e descontos sindicais). Antes, esta
- * regra vivia como metodo privado da Facade; ao sair de la, ela pode ser usada
- * por qualquer classe sem depender da Facade.
+ * partes do sistema (calculo de salarios e descontos sindicais).
  */
 public final class Dinheiro {
 

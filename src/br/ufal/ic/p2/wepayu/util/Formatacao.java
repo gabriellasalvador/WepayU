@@ -4,9 +4,8 @@ import java.util.Locale;
 
 /**
  * Formatacao de numeros como texto no padrao usado pelos comandos e relatorios do
- * sistema (virgula como separador decimal). Antes estes metodos eram privados da
- * Facade; agora qualquer classe que precise exibir valores ou horas (como a folha
- * de pagamento) usa os mesmos formatos, sem depender da Facade.
+ * sistema (virgula como separador decimal). Qualquer classe que precise exibir
+ * valores ou horas (como a folha de pagamento) usa os mesmos formatos daqui.
  */
 public final class Formatacao {
 

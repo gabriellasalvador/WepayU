@@ -14,8 +14,7 @@ import java.util.List;
  * Empregado filiado ao sindicato. Guarda os dados da filiacao (id no sindicato e
  * taxa sindical diaria, que nao mudam), as taxas de servico lancadas e a divida
  * acumulada que ainda nao foi descontada em folha (estes dois ultimos mudam ao
- * longo do tempo). E tambem esta classe que sabe calcular o desconto da folha,
- * regra que antes ficava na Facade.
+ * longo do tempo). E tambem esta classe que sabe calcular o desconto da folha.
  *
  * Para mudar o id ou a taxa sindical cria-se um novo Filiado (Empregado.setSindicato).
  */

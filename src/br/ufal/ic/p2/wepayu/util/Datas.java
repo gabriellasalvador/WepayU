@@ -7,9 +7,8 @@ import java.util.function.Supplier;
 
 /**
  * Conversao de datas recebidas como texto no formato "d/m/aaaa" (como chegam nos
- * comandos) para LocalDate. Antes, cada comando da Facade repetia o seu proprio
- * try/catch; agora a conversao fica em um unico lugar e cada chamador so informa
- * qual excecao de negocio lancar quando a data for invalida.
+ * comandos) para LocalDate. A conversao fica em um unico lugar e cada chamador so
+ * informa qual excecao de negocio lancar quando a data for invalida.
  */
 public final class Datas {
 

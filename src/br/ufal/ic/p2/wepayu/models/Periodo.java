@@ -10,9 +10,9 @@ import java.time.LocalDate;
 
 /**
  * Intervalo de datas [inicio, fim): inclui a data inicial e NAO inclui a final. E o
- * periodo usado nas consultas de horas, vendas e taxas de servico. Antes, a Facade
- * repetia em cada consulta a conversao das duas datas, a checagem de ordem e o teste
- * "a data esta dentro do periodo"; agora tudo isso mora aqui.
+ * periodo usado nas consultas de horas, vendas e taxas de servico. Concentra a
+ * conversao das duas datas, a checagem de ordem e o teste "a data esta dentro do
+ * periodo".
  */
 public final class Periodo {
     private final LocalDate inicio;
