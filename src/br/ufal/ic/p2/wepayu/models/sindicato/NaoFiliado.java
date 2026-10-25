@@ -20,6 +20,11 @@ public class NaoFiliado implements FiliacaoSindical {
     }
 
     @Override
+    public boolean temIdSindicato(String id) {
+        return false;
+    }
+
+    @Override
     public String getIdSindicato() throws EmpregadoNaoEhSindicalizadoException {
         throw new EmpregadoNaoEhSindicalizadoException();
     }

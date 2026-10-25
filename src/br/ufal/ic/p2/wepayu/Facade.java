@@ -12,9 +12,6 @@ import br.ufal.ic.p2.wepayu.excecoes.tipoempregado.*;
 import br.ufal.ic.p2.wepayu.models.CartaoDePonto;
 import br.ufal.ic.p2.wepayu.models.Empregado;
 import br.ufal.ic.p2.wepayu.models.TipoEmpregado;
-import br.ufal.ic.p2.wepayu.models.EmpregadoAssalariado;
-import br.ufal.ic.p2.wepayu.models.EmpregadoComissionado;
-import br.ufal.ic.p2.wepayu.models.EmpregadoHorista;
 import br.ufal.ic.p2.wepayu.models.Periodo;
 import br.ufal.ic.p2.wepayu.models.ResultadoVenda;
 import br.ufal.ic.p2.wepayu.models.TaxaServico;
@@ -37,17 +34,22 @@ import java.io.PrintWriter;
 import java.io.FileOutputStream;
 import java.io.OutputStreamWriter;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.function.Supplier;
 
 /**
- * Fachada do sistema WePayU.
+ * Fachada do sistema WePayU: o unico ponto de entrada que o EasyAccept (script de
+ * testes de aceitacao) invoca por reflection. Cada metodo publico e um comando do
+ * enunciado (cadastro, alteracao e remocao de empregados, cartoes de ponto, vendas,
+ * taxas de servico, folha de pagamento, undo/redo e encerramento).
  *
- * Concentra toda a API publica que o EasyAccept (script de testes de aceitacao)
- * invoca por reflection: cadastro/alteracao/remocao de empregados, lancamento de
- * cartoes de ponto/vendas/taxas de servico, calculo e geracao da folha de pagamento
- * (US7), e o mecanismo de undo/redo com persistencia em disco (US8).
+ * A fachada nao decide como o sistema funciona; ela converte os textos recebidos
+ * (numeros, datas), confere se os dados vieram preenchidos e delega o trabalho a quem
+ * entende do assunto:
+ *  - RepositorioEmpregados: onde os empregados ficam guardados e como sao buscados;
+ *  - Empregado e suas subclasses (criadas por TipoEmpregado): salario, agenda e folha;
+ *  - MetodoPagamento e FiliacaoSindical: forma de pagamento e situacao no sindicato;
+ *  - FolhaDePagamento: calculo e relatorio da folha;
+ *  - GerenciadorDeEstado e ArmazenamentoDeEstado: undo/redo e persistencia (Memento).
  *
  * Por isso varios metodos e o construtor aparecem como "nunca usados" para a IDE:
  * eles nao sao chamados diretamente por outra classe do projeto, e sim pelo
@@ -74,7 +76,6 @@ public class Facade {
     public Facade() {
         armazenamento.carregar().ifPresent(gerenciador::restaurar);
     }
-
 
     /**
      * Reseta completamente o sistema (empregados, folhas geradas e contador de id),
@@ -283,13 +284,7 @@ public class Facade {
             throw new NaoHaEmpregadoComEsseNomeException();
         }
 
-        List<Empregado> encontrados = new ArrayList<>();
-        for (Empregado e : repositorio.listar()) {
-            if (e.getNome().contains(nome)) {
-                encontrados.add(e);
-            }
-        }
-        encontrados.sort(Comparator.comparing(e -> Integer.parseInt(e.getId())));
+        List<Empregado> encontrados = repositorio.buscarPorNome(nome);
 
         if (indiceConvertido < 1 || indiceConvertido > encontrados.size()) {
             throw new NaoHaEmpregadoComEsseNomeException();
@@ -375,28 +370,14 @@ public class Facade {
     }
 
     /**
-     * Localiza o empregado sindicalizado cujo idSindicato corresponde ao "membro" informado.
-     * Usado pelos comandos relacionados a taxa de servico, que identificam o empregado
-     * pelo id de sindicato e nao pelo id do empregado.
-     */
-    private Empregado buscarPorIdSindicato(String membro) throws ValidacaoException {
-        for (Empregado empregado : repositorio.listar()) {
-            if (empregado.getSindicato().isFiliado() && membro.equals(empregado.getSindicato().getIdSindicato())) {
-                return empregado;
-            }
-        }
-        throw new MembroNaoExisteException();
-    }
-
-    /**
      * Lanca uma taxa de servico cobrada por um empregado sindicalizado, identificado
      * pelo id de sindicato ("membro"), em uma data especifica.
      */
     public void lancaTaxaServico(String membro, String data, String valor) throws ValidacaoException {
         verificarSistemaAtivo();
         EstadoDoSistema fotoAntes = gerenciador.tirarFoto();
-        if (membro == null || membro.isEmpty()) throw new IdentificacaoMembroNulaException();
-        Empregado empregado = buscarPorIdSindicato(membro);
+        exigirPreenchido(membro, IdentificacaoMembroNulaException::new);
+        Empregado empregado = repositorio.buscarPorIdSindicato(membro).orElseThrow(MembroNaoExisteException::new);
 
         LocalDate dataConvertida = Datas.converter(data, DataInvalidaException::new);
         double valorConvertido = converterParaDouble(valor, ValorNaoNumericoException::new);
@@ -432,7 +413,7 @@ public class Facade {
      * de validacao padrao (id nulo/vazio, empregado inexistente).
      */
     private Empregado buscarEmpregado(String emp) throws ValidacaoException {
-        if (emp == null || emp.isEmpty()) throw new IdentificacaoNulaException();
+        exigirPreenchido(emp, IdentificacaoNulaException::new);
         return repositorio.buscarPorId(emp).orElseThrow(EmpregadoNaoExisteException::new);
     }
 
@@ -538,15 +519,10 @@ public class Facade {
         EstadoDoSistema fotoAntes = gerenciador.tirarFoto();
         Empregado empregado = buscarEmpregado(emp);
 
-        if (idSindicato == null || idSindicato.isEmpty()) throw new IdentificacaoSindicatoNulaException();
+        exigirPreenchido(idSindicato, IdentificacaoSindicatoNulaException::new);
+        if (repositorio.idSindicatoEmUso(idSindicato, empregado)) throw new IdentificacaoSindicatoDuplicadaException();
 
-        for (Empregado outro : repositorio.listar()) {
-            if (outro != empregado && outro.getSindicato().isFiliado() && idSindicato.equals(outro.getSindicato().getIdSindicato())) {
-                throw new IdentificacaoSindicatoDuplicadaException();
-            }
-        }
-
-        if (taxaSindical == null || taxaSindical.isEmpty()) throw new TaxaSindicalNulaException();
+        exigirPreenchido(taxaSindical, TaxaSindicalNulaException::new);
         double taxaConvertida = converterParaDouble(taxaSindical, TaxaSindicalNaoNumericaException::new);
         if (taxaConvertida < 0) throw new TaxaSindicalNegativaException();
 
@@ -563,9 +539,9 @@ public class Facade {
         EstadoDoSistema fotoAntes = gerenciador.tirarFoto();
         Empregado empregado = buscarEmpregado(emp);
 
-        if (banco == null || banco.isEmpty()) throw new BancoNuloException();
-        if (agencia == null || agencia.isEmpty()) throw new AgenciaNulaException();
-        if (contaCorrente == null || contaCorrente.isEmpty()) throw new ContaCorrenteNulaException();
+        exigirPreenchido(banco, BancoNuloException::new);
+        exigirPreenchido(agencia, AgenciaNulaException::new);
+        exigirPreenchido(contaCorrente, ContaCorrenteNulaException::new);
 
         empregado.setMetodoPagamento(new Banco(banco, agencia, contaCorrente));
         gerenciador.registrarComando(fotoAntes);
@@ -620,5 +596,4 @@ public class Facade {
         verificarSistemaAtivo();
         gerenciador.refazer();
     }
-
 }

@@ -2,9 +2,12 @@ package br.ufal.ic.p2.wepayu.repository;
 
 import br.ufal.ic.p2.wepayu.models.Empregado;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -74,6 +77,45 @@ public final class RepositorioEmpregados {
      */
     public Collection<Empregado> listar() {
         return Collections.unmodifiableCollection(empregados.values());
+    }
+
+    /**
+     * Empregados cujo nome contem o trecho informado, ordenados pelo id (numerico).
+     * A lista devolvida e uma copia: alterar a lista nao altera o repositorio.
+     */
+    public List<Empregado> buscarPorNome(String trecho) {
+        List<Empregado> encontrados = new ArrayList<>();
+        for (Empregado empregado : empregados.values()) {
+            if (empregado.getNome().contains(trecho)) {
+                encontrados.add(empregado);
+            }
+        }
+        encontrados.sort(Comparator.comparing(e -> Integer.parseInt(e.getId())));
+        return encontrados;
+    }
+
+    /** Procura o empregado sindicalizado que tem o id de sindicato informado. */
+    public Optional<Empregado> buscarPorIdSindicato(String idSindicato) {
+        for (Empregado empregado : empregados.values()) {
+            if (empregado.getSindicato().temIdSindicato(idSindicato)) {
+                return Optional.of(empregado);
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Informa se o id de sindicato ja pertence a OUTRO empregado sindicalizado (o
+     * empregado "exceto" e ignorado, para poder reaplicar o proprio id a ele mesmo).
+     * O id de sindicato precisa ser unico entre os empregados.
+     */
+    public boolean idSindicatoEmUso(String idSindicato, Empregado exceto) {
+        for (Empregado outro : empregados.values()) {
+            if (outro != exceto && outro.getSindicato().temIdSindicato(idSindicato)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Quantidade de empregados cadastrados. */

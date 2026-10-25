@@ -17,9 +17,9 @@ import java.util.List;
  *    dados de sindicato lanca EmpregadoNaoEhSindicalizadoException.
  *
  * Todo empregado possui sempre uma FiliacaoSindical (comeca como NaoFiliado), entao
- * nunca existe referencia nula, e nem a Empregado nem a Facade precisam de flag,
- * de "if (filiado)" ou de instanceof: basta chamar os metodos e cada classe faz
- * o que lhe cabe. Filiar ou desfiliar um empregado significa trocar o objeto
+ * nunca existe referencia nula, e nem a Empregado nem a Facade precisam de flag
+ * nem de "if (filiado)": basta chamar os metodos e cada classe faz o que lhe cabe.
+ * Filiar ou desfiliar um empregado significa trocar o objeto
  * (Empregado.setSindicato), do mesmo jeito que se troca a forma de pagamento.
  * Ao trocar para NaoFiliado, divida e taxas de servico do objeto antigo deixam de
  * existir junto com ele.
@@ -38,6 +38,12 @@ public interface FiliacaoSindical extends Serializable {
      * @throws EmpregadoNaoEhSindicalizadoException se nao estiver filiado
      */
     String getIdSindicato() throws EmpregadoNaoEhSindicalizadoException;
+
+    /**
+     * Informa se este e o id do empregado no sindicato. Quem nao esta filiado nao
+     * tem id, entao responde sempre false (sem lancar excecao).
+     */
+    boolean temIdSindicato(String id);
 
     /**
      * Taxa sindical cobrada por dia.

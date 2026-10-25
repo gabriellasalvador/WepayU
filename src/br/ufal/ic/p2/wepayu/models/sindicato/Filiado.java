@@ -47,6 +47,11 @@ public class Filiado implements FiliacaoSindical {
     }
 
     @Override
+    public boolean temIdSindicato(String id) {
+        return idSindicato.equals(id);
+    }
+
+    @Override
     public String getIdSindicato() {
         return idSindicato;
     }
