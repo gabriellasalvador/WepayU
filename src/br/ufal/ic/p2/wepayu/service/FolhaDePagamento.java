@@ -10,7 +10,9 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Servico responsavel pela folha de pagamento: percorre os empregados do repositorio,
@@ -20,12 +22,42 @@ import java.util.List;
  * Antes toda essa logica estava dentro da Facade. Agora a Facade so recebe o comando
  * (totalFolha ou rodaFolha), chama este servico e usa o resultado, o que deixa cada
  * classe com uma unica responsabilidade.
+ *
+ * O servico tambem guarda as folhas ja geradas por data (cache), que fazem parte do
+ * estado do sistema e por isso entram nas fotos de undo/redo (GerenciadorDeEstado).
  */
 public class FolhaDePagamento {
     private final RepositorioEmpregados repositorio;
+    // Cache das folhas ja geradas por data, para que gerarRelatorio() nao recalcule
+    // (nem remova saldo de divida sindical duas vezes) se chamado de novo com a mesma data.
+    private Map<LocalDate, String> folhasGeradas = new HashMap<>();
 
     public FolhaDePagamento(RepositorioEmpregados repositorio) {
         this.repositorio = repositorio;
+    }
+
+    /**
+     * Gera de fato a folha de uma data (persistindo os descontos sindicais calculados)
+     * e devolve o texto do relatorio. Se a folha dessa data ja foi gerada antes,
+     * devolve o mesmo relatorio sem recalcular nem descontar a divida sindical de novo.
+     */
+    public String gerarRelatorio(LocalDate data) {
+        return folhasGeradas.computeIfAbsent(data, d -> calcular(d, true).getRelatorio());
+    }
+
+    /** Esquece as folhas ja geradas (usado ao zerar o sistema). */
+    public void limparFolhasGeradas() {
+        folhasGeradas.clear();
+    }
+
+    /** Copia das folhas geradas, para entrar numa foto do estado do sistema. */
+    public Map<LocalDate, String> copiarFolhasGeradas() {
+        return new HashMap<>(folhasGeradas);
+    }
+
+    /** Substitui as folhas geradas pelas de uma foto restaurada. */
+    public void restaurarFolhasGeradas(Map<LocalDate, String> folhasRestauradas) {
+        this.folhasGeradas = folhasRestauradas;
     }
 
     /**

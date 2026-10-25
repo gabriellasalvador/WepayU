@@ -7,8 +7,6 @@ import br.ufal.ic.p2.wepayu.Exception.pagamento.AgenciaNulaException;
 import br.ufal.ic.p2.wepayu.Exception.pagamento.BancoNuloException;
 import br.ufal.ic.p2.wepayu.Exception.pagamento.ContaCorrenteNulaException;
 import br.ufal.ic.p2.wepayu.Exception.sindicato.*;
-import br.ufal.ic.p2.wepayu.Exception.sistema.NaoHaComandoDesfazerException;
-import br.ufal.ic.p2.wepayu.Exception.sistema.NaoHaComandoRefazerException;
 import br.ufal.ic.p2.wepayu.Exception.sistema.SistemaEncerradoException;
 import br.ufal.ic.p2.wepayu.Exception.tipoempregado.*;
 import br.ufal.ic.p2.wepayu.models.CartaoDePonto;
@@ -24,28 +22,21 @@ import br.ufal.ic.p2.wepayu.models.pagamento.FabricaMetodoPagamento;
 import br.ufal.ic.p2.wepayu.models.sindicato.Filiado;
 import br.ufal.ic.p2.wepayu.models.sindicato.NaoFiliado;
 import br.ufal.ic.p2.wepayu.repository.RepositorioEmpregados;
+import br.ufal.ic.p2.wepayu.service.ArmazenamentoDeEstado;
+import br.ufal.ic.p2.wepayu.service.EstadoDoSistema;
 import br.ufal.ic.p2.wepayu.service.FolhaDePagamento;
+import br.ufal.ic.p2.wepayu.service.GerenciadorDeEstado;
 import br.ufal.ic.p2.wepayu.util.Formatacao;
 
 
 import java.time.LocalDate;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.io.PrintWriter;
 import java.io.FileOutputStream;
 import java.io.OutputStreamWriter;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.io.ByteArrayOutputStream;
-import java.io.ByteArrayInputStream;
-import java.io.ObjectOutputStream;
-import java.io.ObjectInputStream;
-import java.util.Deque;
-import java.util.ArrayDeque;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.util.function.Supplier;
 
 /**
@@ -67,29 +58,19 @@ public class Facade {
     private final RepositorioEmpregados repositorio = RepositorioEmpregados.getInstancia();
     // Servico que calcula a folha de pagamento e monta o relatorio.
     private final FolhaDePagamento folha = new FolhaDePagamento(repositorio);
-    // Pilhas de "fotos" (snapshots serializados) do estado do sistema, usadas pelo undo/redo (US8).
-    // Cada comando que muda o estado empilha em pilhaUndo a foto de ANTES de executar.
-    private Deque<byte[]> pilhaUndo = new ArrayDeque<>();
-    private Deque<byte[]> pilhaRedo = new ArrayDeque<>();
+    // Cuida das fotos do estado: undo/redo (Memento) e restauracao do estado salvo.
+    private final GerenciadorDeEstado gerenciador = new GerenciadorDeEstado(repositorio, folha);
+    // Grava e le em disco o arquivo onde o estado do sistema e persistido ao encerrar.
+    private final ArmazenamentoDeEstado armazenamento = new ArmazenamentoDeEstado("estado.dat");
     // Marca se encerrarSistema() ja foi chamado; depois disso nenhum outro comando pode rodar.
     private boolean sistemaEncerrado = false;
-    // Nome do arquivo onde o estado do sistema e persistido ao encerrar.
-    private static final String ARQUIVO_ESTADO = "estado.dat";
-
 
     /**
      * Ao criar a fachada, tenta restaurar o estado salvo por um encerrarSistema()
      * anterior (arquivo estado.dat), simulando persistencia entre execucoes.
      */
     public Facade() {
-        if (Files.exists(Paths.get(ARQUIVO_ESTADO))) {
-            try {
-                byte[] dadosSalvos = Files.readAllBytes(Paths.get(ARQUIVO_ESTADO));
-                restaurarFoto(dadosSalvos);
-            } catch (IOException e) {
-                throw new RuntimeException("Erro ao carregar estado salvo: " + e.getMessage(), e);
-            }
-        }
+        armazenamento.carregar().ifPresent(gerenciador::restaurar);
     }
 
 
@@ -99,10 +80,10 @@ public class Facade {
      */
     public void zerarSistema() throws ValidacaoException {
         verificarSistemaAtivo();
-        byte[] fotoAntes = tirarFoto();
+        EstadoDoSistema fotoAntes = gerenciador.tirarFoto();
         repositorio.zerar();
-        folhasGeradas.clear();
-        registrarComando(fotoAntes);
+        folha.limparFolhasGeradas();
+        gerenciador.registrarComando(fotoAntes);
     }
 
     /**
@@ -111,11 +92,7 @@ public class Facade {
      */
     public void encerrarSistema() {
         sistemaEncerrado = true;
-        try {
-            Files.write(Paths.get(ARQUIVO_ESTADO), tirarFoto());
-        } catch (IOException e) {
-            throw new RuntimeException("Erro ao salvar estado: " + e.getMessage(), e);
-        }
+        armazenamento.salvar(gerenciador.tirarFoto());
     }
 
     /**
@@ -177,10 +154,10 @@ public class Facade {
      * registra no sistema, empilhando o estado anterior para o undo.
      */
     private String cadastrar(TipoEmpregado tipo, String nome, String endereco,
-                             double salario, double comissao, byte[] fotoAntes) {
+                             double salario, double comissao, EstadoDoSistema fotoAntes) {
         String id = repositorio.gerarProximoId();
         repositorio.salvar(tipo.criar(id, nome, endereco, salario, comissao));
-        registrarComando(fotoAntes);
+        gerenciador.registrarComando(fotoAntes);
         return id;
     }
 
@@ -190,7 +167,7 @@ public class Facade {
      */
     public String criarEmpregado(String nome, String endereco, String tipo, String salario) throws ValidacaoException {
         verificarSistemaAtivo();
-        byte[] fotoAntes = tirarFoto();
+        EstadoDoSistema fotoAntes = gerenciador.tirarFoto();
         exigirPreenchido(nome, NomeNuloException::new);
         exigirPreenchido(endereco, EnderecoNuloException::new);
         TipoEmpregado tipoEmpregado = TipoEmpregado.porNome(tipo);
@@ -206,7 +183,7 @@ public class Facade {
      */
     public String criarEmpregado(String nome, String endereco, String tipo, String salario, String comissao) throws ValidacaoException {
         verificarSistemaAtivo();
-        byte[] fotoAntes = tirarFoto();
+        EstadoDoSistema fotoAntes = gerenciador.tirarFoto();
         exigirPreenchido(nome, NomeNuloException::new);
         exigirPreenchido(endereco, EnderecoNuloException::new);
         TipoEmpregado tipoEmpregado = TipoEmpregado.porNome(tipo);
@@ -222,9 +199,9 @@ public class Facade {
      */
     public void removerEmpregado(String emp) throws ValidacaoException {
         verificarSistemaAtivo();
-        byte[] fotoAntes = tirarFoto();
+        EstadoDoSistema fotoAntes = gerenciador.tirarFoto();
         Empregado empregado = buscarEmpregado(emp);
-        registrarComando(fotoAntes);
+        gerenciador.registrarComando(fotoAntes);
         repositorio.remover(empregado.getId());
     }
 
@@ -293,7 +270,7 @@ public class Facade {
      */
     public void lancaCartao(String emp, String data, String horas) throws ValidacaoException {
         verificarSistemaAtivo();
-        byte[] fotoAntes = tirarFoto();
+        EstadoDoSistema fotoAntes = gerenciador.tirarFoto();
         Empregado empregado = buscarEmpregado(emp);
 
         LocalDate dataConvertida;
@@ -306,7 +283,7 @@ public class Facade {
         if (horasConvertidas <= 0) throw new HorasNaoPositivasException();
 
         empregado.addCartao(new CartaoDePonto(dataConvertida, horasConvertidas));
-        registrarComando(fotoAntes);
+        gerenciador.registrarComando(fotoAntes);
     }
 
     /**
@@ -393,7 +370,7 @@ public class Facade {
      */
     public void lancaVenda(String emp, String data, String valor) throws ValidacaoException {
         verificarSistemaAtivo();
-        byte[] fotoAntes = tirarFoto();
+        EstadoDoSistema fotoAntes = gerenciador.tirarFoto();
         Empregado empregado = buscarEmpregado(emp);
 
         LocalDate dataConvertida;
@@ -406,7 +383,7 @@ public class Facade {
         if (valorConvertido <= 0) throw new ValorNaoPositivoException();
 
         empregado.addVenda(new ResultadoVenda(dataConvertida, valorConvertido));
-        registrarComando(fotoAntes);
+        gerenciador.registrarComando(fotoAntes);
     }
 
     /**
@@ -449,49 +426,12 @@ public class Facade {
     }
 
     /**
-     * Serializa (via ObjectOutputStream) uma "foto" completa do estado mutavel do sistema:
-     * os empregados e o proximo id (vindos do repositorio) e as folhas ja geradas.
-     * E a base do mecanismo de undo/redo/persistencia: cada snapshot vira um byte[]
-     * que pode ser empilhado e restaurado depois.
-     */
-    private byte[] tirarFoto() {
-        ByteArrayOutputStream bufferDeBytes = new ByteArrayOutputStream();
-        // try-with-resources: o stream e fechado (e descarregado) mesmo se algo falhar no meio.
-        try (ObjectOutputStream escritorDeObjetos = new ObjectOutputStream(bufferDeBytes)) {
-            escritorDeObjetos.writeObject(repositorio.copiarEmpregados());
-            escritorDeObjetos.writeObject(folhasGeradas);
-            escritorDeObjetos.writeInt(repositorio.getProximoId());
-        } catch (IOException e) {
-            throw new RuntimeException("Erro ao tirar foto do sistema: " + e.getMessage(), e);
-        }
-        return bufferDeBytes.toByteArray();
-    }
-
-    /**
-     * Desserializa uma "foto" gerada por tirarFoto() e substitui o estado atual
-     * (repositorio de empregados e folhasGeradas) pelo estado salvo naquele snapshot.
-     * Usado por undo, redo e pela restauracao do estado ao iniciar a Facade.
-     */
-    @SuppressWarnings("unchecked")
-    private void restaurarFoto(byte[] foto) {
-        try (ObjectInputStream leitorDeObjetos = new ObjectInputStream(new ByteArrayInputStream(foto))) {
-            Map<String, Empregado> empregadosRestaurados = (Map<String, Empregado>) leitorDeObjetos.readObject();
-            folhasGeradas = (Map<LocalDate, String>) leitorDeObjetos.readObject();
-            int proximoIdRestaurado = leitorDeObjetos.readInt();
-            // Troca so o conteudo do repositorio unico; o objeto repositorio continua o mesmo.
-            repositorio.restaurar(empregadosRestaurados, proximoIdRestaurado);
-        } catch (IOException | ClassNotFoundException e) {
-            throw new RuntimeException("Erro ao restaurar foto do sistema: " + e.getMessage(), e);
-        }
-    }
-
-    /**
      * Lanca uma taxa de servico cobrada por um empregado sindicalizado, identificado
      * pelo id de sindicato ("membro"), em uma data especifica.
      */
     public void lancaTaxaServico(String membro, String data, String valor) throws ValidacaoException {
         verificarSistemaAtivo();
-        byte[] fotoAntes = tirarFoto();
+        EstadoDoSistema fotoAntes = gerenciador.tirarFoto();
         if (membro == null || membro.isEmpty()) throw new IdentificacaoMembroNulaException();
         Empregado empregado = buscarPorIdSindicato(membro);
 
@@ -505,7 +445,7 @@ public class Facade {
         if (valorConvertido <= 0) throw new ValorNaoPositivoException();
 
         empregado.getSindicato().registrarTaxaServico(new TaxaServico(dataConvertida, valorConvertido));
-        registrarComando(fotoAntes);
+        gerenciador.registrarComando(fotoAntes);
     }
 
     /**
@@ -573,7 +513,7 @@ public class Facade {
      */
     public void alteraEmpregado(String emp, String atributo, String valor) throws ValidacaoException {
         verificarSistemaAtivo();
-        byte[] fotoAntes = tirarFoto();
+        EstadoDoSistema fotoAntes = gerenciador.tirarFoto();
         Empregado empregado = buscarEmpregado(emp);
 
         switch (atributo) {
@@ -609,7 +549,7 @@ public class Facade {
                 throw new AtributoNaoExisteException();
         }
 
-        registrarComando(fotoAntes);
+        gerenciador.registrarComando(fotoAntes);
     }
 
     /**
@@ -619,7 +559,7 @@ public class Facade {
      */
     public void alteraEmpregado(String emp, String atributo, String valor, String valorExtra) throws ValidacaoException {
         verificarSistemaAtivo();
-        byte[] fotoAntes = tirarFoto();
+        EstadoDoSistema fotoAntes = gerenciador.tirarFoto();
         Empregado empregado = buscarEmpregado(emp);
         if (!atributo.equals("tipo")) throw new AtributoNaoExisteException();
 
@@ -632,7 +572,7 @@ public class Facade {
         } else {
             throw new TipoInvalidoException();
         }
-        registrarComando(fotoAntes);
+        gerenciador.registrarComando(fotoAntes);
     }
 
     /**
@@ -642,7 +582,7 @@ public class Facade {
      */
     public void alteraEmpregado(String emp, String atributo, String valor, String idSindicato, String taxaSindical) throws ValidacaoException {
         verificarSistemaAtivo();
-        byte[] fotoAntes = tirarFoto();
+        EstadoDoSistema fotoAntes = gerenciador.tirarFoto();
         Empregado empregado = buscarEmpregado(emp);
 
         if (idSindicato == null || idSindicato.isEmpty()) throw new IdentificacaoSindicatoNulaException();
@@ -658,7 +598,7 @@ public class Facade {
         if (taxaConvertida < 0) throw new TaxaSindicalNegativaException();
 
         empregado.setSindicato(new Filiado(idSindicato, taxaConvertida));
-        registrarComando(fotoAntes);
+        gerenciador.registrarComando(fotoAntes);
     }
 
     /**
@@ -667,7 +607,7 @@ public class Facade {
      */
     public void alteraEmpregado(String emp, String atributo, String valor1, String banco, String agencia, String contaCorrente) throws ValidacaoException {
         verificarSistemaAtivo();
-        byte[] fotoAntes = tirarFoto();
+        EstadoDoSistema fotoAntes = gerenciador.tirarFoto();
         Empregado empregado = buscarEmpregado(emp);
 
         if (banco == null || banco.isEmpty()) throw new BancoNuloException();
@@ -675,14 +615,10 @@ public class Facade {
         if (contaCorrente == null || contaCorrente.isEmpty()) throw new ContaCorrenteNulaException();
 
         empregado.setMetodoPagamento(new Banco(banco, agencia, contaCorrente));
-        registrarComando(fotoAntes);
+        gerenciador.registrarComando(fotoAntes);
     }
 
 // ===================== FOLHA DE PAGAMENTO (US7) =====================
-
-    // Cache das folhas ja geradas por data, para que rodaFolha() nao recalcule
-    // (nem remova saldo de divida sindical duas vezes) se chamado de novo com a mesma data.
-    private Map<LocalDate, String> folhasGeradas = new HashMap<>();
 
     /**
      * Retorna apenas o valor total da folha para uma data, sem gerar o relatorio
@@ -697,65 +633,41 @@ public class Facade {
 
     /**
      * Gera de fato a folha de pagamento de uma data (persistindo os descontos sindicais
-     * calculados) e grava o relatorio no arquivo de saida indicado. Usa folhasGeradas
-     * como cache para nao recalcular/remover a divida sindical duas vezes se a mesma
-     * data for rodada novamente.
+     * calculados) e grava o relatorio no arquivo de saida indicado. O servico de folha
+     * guarda as folhas ja geradas, para nao remover a divida sindical duas vezes se a
+     * mesma data for rodada novamente.
      */
     public void rodaFolha(String data, String saida) throws ValidacaoException {
         verificarSistemaAtivo();
-        byte[] fotoAntes = tirarFoto();
+        EstadoDoSistema fotoAntes = gerenciador.tirarFoto();
         LocalDate dataConvertida;
         try { dataConvertida = parseData(data); } catch (Exception e) { throw new DataInvalidaException(); }
 
-        String relatorio = folhasGeradas.computeIfAbsent(dataConvertida, d -> folha.calcular(d, true).getRelatorio());
+        String relatorio = folha.gerarRelatorio(dataConvertida);
 
         try (PrintWriter out = new PrintWriter(new OutputStreamWriter(new FileOutputStream(saida), "UTF-8"))) {
             out.print(relatorio);
         } catch (IOException e) {
             throw new RuntimeException("Erro ao escrever arquivo da folha: " + e.getMessage(), e);
         }
-        registrarComando(fotoAntes);
+        gerenciador.registrarComando(fotoAntes);
     }
 
     /**
-     * Empilha a foto do estado anterior a execucao de um comando que muda dados,
-     * habilitando o undo. Qualquer novo comando invalida a pilha de redo (nao faz
-     * mais sentido refazer algo depois que um novo comando foi executado).
-     */
-    private void registrarComando(byte[] fotoAntes) {
-        pilhaUndo.push(fotoAntes);
-        pilhaRedo.clear();
-    }
-
-    /**
-     * Desfaz o ultimo comando que alterou o estado do sistema: salva o estado atual
-     * na pilha de redo e restaura o estado anterior guardado na pilha de undo.
+     * Desfaz o ultimo comando que alterou o estado do sistema (quem restaura o estado
+     * anterior e o GerenciadorDeEstado).
      */
     public void undo() throws ValidacaoException {
         verificarSistemaAtivo();
-        if (pilhaUndo.isEmpty()) throw new NaoHaComandoDesfazerException();
-
-        byte[] estadoAtual = tirarFoto();
-        byte[] estadoAnterior = pilhaUndo.pop();
-        pilhaRedo.push(estadoAtual);
-        restaurarFoto(estadoAnterior);
+        gerenciador.desfazer();
     }
 
     /**
-     * Refaz o ultimo comando desfeito por undo(): salva o estado atual na pilha
-     * de undo e restaura o estado seguinte guardado na pilha de redo.
+     * Refaz o ultimo comando desfeito por undo().
      */
     public void redo() throws ValidacaoException {
         verificarSistemaAtivo();
-        if (pilhaRedo.isEmpty()) throw new NaoHaComandoRefazerException();
-
-        byte[] estadoAtual = tirarFoto();
-        byte[] estadoSeguinte = pilhaRedo.pop();
-        pilhaUndo.push(estadoAtual);
-        restaurarFoto(estadoSeguinte);
+        gerenciador.refazer();
     }
-
-
-
 
 }
