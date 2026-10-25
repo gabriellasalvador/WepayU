@@ -1,7 +1,7 @@
 package br.ufal.ic.p2.wepayu.models;
 
-import br.ufal.ic.p2.wepayu.Exception.tipoempregado.EmpregadoNaoEhComissionadoException;
-import br.ufal.ic.p2.wepayu.Exception.tipoempregado.EmpregadoNaoEhHoristaException;
+import br.ufal.ic.p2.wepayu.excecoes.tipoempregado.EmpregadoNaoEhComissionadoException;
+import br.ufal.ic.p2.wepayu.excecoes.tipoempregado.EmpregadoNaoEhHoristaException;
 import br.ufal.ic.p2.wepayu.models.agenda.AgendaPagamento;
 import br.ufal.ic.p2.wepayu.models.folha.CategoriaFolha;
 import br.ufal.ic.p2.wepayu.models.folha.LinhaFolha;

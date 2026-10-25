@@ -1,6 +1,6 @@
 package br.ufal.ic.p2.wepayu.models;
 
-import br.ufal.ic.p2.wepayu.Exception.cadastro.TipoInvalidoException;
+import br.ufal.ic.p2.wepayu.excecoes.cadastro.TipoInvalidoException;
 
 /**
  * Os tipos de empregado que o sistema conhece, e tambem a FABRICA que cria cada um

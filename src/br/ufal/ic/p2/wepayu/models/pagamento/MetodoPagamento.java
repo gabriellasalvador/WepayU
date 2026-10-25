@@ -1,6 +1,6 @@
 package br.ufal.ic.p2.wepayu.models.pagamento;
 
-import br.ufal.ic.p2.wepayu.Exception.tipoempregado.EmpregadoNaoRecebeEmBancoException;
+import br.ufal.ic.p2.wepayu.excecoes.tipoempregado.EmpregadoNaoRecebeEmBancoException;
 
 import java.io.Serializable;
 

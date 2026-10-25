@@ -1,6 +1,6 @@
 package br.ufal.ic.p2.wepayu.models.sindicato;
 
-import br.ufal.ic.p2.wepayu.Exception.tipoempregado.EmpregadoNaoEhSindicalizadoException;
+import br.ufal.ic.p2.wepayu.excecoes.tipoempregado.EmpregadoNaoEhSindicalizadoException;
 import br.ufal.ic.p2.wepayu.models.TaxaServico;
 
 import java.time.LocalDate;

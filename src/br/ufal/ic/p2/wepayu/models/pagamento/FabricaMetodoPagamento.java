@@ -1,6 +1,6 @@
 package br.ufal.ic.p2.wepayu.models.pagamento;
 
-import br.ufal.ic.p2.wepayu.Exception.pagamento.MetodoPagamentoInvalidoException;
+import br.ufal.ic.p2.wepayu.excecoes.pagamento.MetodoPagamentoInvalidoException;
 
 /**
  * Fabrica (padrao Factory) que transforma o nome de uma forma de pagamento,
